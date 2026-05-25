@@ -1,0 +1,267 @@
+import { h, icon, emptyState } from '../components/ui.js';
+import { openModal, confirm } from '../components/modal.js';
+import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus } from '../lib/state.js';
+import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
+import { rerender } from '../lib/router.js';
+
+let viewMonth = startOfMonth(new Date());
+
+async function lessonDialog(existing, defaultDate) {
+  const { data } = getState();
+  const students = data.students.filter(s => !s.archived);
+  if (students.length === 0) {
+    await openModal({
+      title: 'Sem alunos',
+      body: h('p', null, 'Cadastre um aluno antes de marcar uma aula.'),
+      actions: [{ label: 'OK', variant: 'btn-primary', value: null }],
+    });
+    return null;
+  }
+
+  const form = h('form');
+  form.append(
+    h('div', { class: 'field' },
+      h('label', null, 'Aluno'),
+      h('select', { name: 'studentId', required: true },
+        ...students.map(s => h('option', { value: s.id, selected: existing?.studentId === s.id }, s.name)),
+      ),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Data e hora'),
+      h('input', {
+        name: 'start',
+        type: 'datetime-local',
+        required: true,
+        value: existing ? toDateTimeLocal(existing.startISO) : (defaultDate ? toDateTimeLocal(defaultDate.toISOString()) : ''),
+      }),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Duração (minutos)'),
+      h('input', { name: 'duration', type: 'number', step: '15', min: '15', required: true, value: existing?.durationMinutes ?? 60 }),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Notas'),
+      h('textarea', { name: 'notes', rows: 2 }, existing?.notes || ''),
+    ),
+  );
+
+  return openModal({
+    title: existing ? 'Editar aula' : 'Nova aula',
+    body: form,
+    actions: [
+      existing && h('button', {
+        type: 'button',
+        class: 'btn btn-danger btn-sm',
+        onClick: async (_, close) => {
+          const ok = await confirm('Apagar esta aula?');
+          if (ok) { await deleteLesson(existing.id); close({ deleted: true }); }
+        },
+      }, 'Apagar'),
+      { label: 'Cancelar', variant: 'btn-ghost', value: null },
+      { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
+        if (!form.reportValidity()) return false;
+        close({
+          studentId: form.studentId.value,
+          startISO: fromDateTimeLocal(form.start.value),
+          durationMinutes: form.duration.value,
+          notes: form.notes.value,
+        });
+      } },
+    ].filter(Boolean),
+  });
+}
+
+export async function renderSchedule() {
+  const root = h('div');
+  const { data } = getState();
+  const studentMap = Object.fromEntries(data.students.map(s => [s.id, s]));
+
+  // Navigation
+  const nav = h('div', { class: 'cal-nav' },
+    h('button', { class: 'btn btn-sm', onClick: () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1); rerender(); } }, icon('chevronL')),
+    h('div', { class: 'month' }, fmtMonthYear(viewMonth)),
+    h('button', { class: 'btn btn-sm', onClick: () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1); rerender(); } }, icon('chevronR')),
+  );
+  root.appendChild(nav);
+
+  const head = h('div', { class: 'section-head', style: { marginBottom: '10px' } },
+    h('button', { class: 'btn btn-sm', onClick: () => { viewMonth = startOfMonth(new Date()); rerender(); } }, 'Hoje'),
+    h('button', {
+      class: 'btn btn-primary btn-sm',
+      onClick: async () => {
+        const r = await lessonDialog(null, new Date());
+        if (r && !r.deleted) { await addLesson(r); rerender(); }
+      },
+    }, icon('plus'), 'Aula'),
+  );
+  root.appendChild(head);
+
+  // Build grid: 7 cols, start on Sunday
+  const monthStart = startOfMonth(viewMonth);
+  const monthEnd = endOfMonth(viewMonth);
+  const gridStart = addDays(monthStart, -monthStart.getDay());
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  const lessonsByDay = new Map();
+  for (const l of data.lessons) {
+    const k = dayKey(l.startISO);
+    if (!lessonsByDay.has(k)) lessonsByDay.set(k, []);
+    lessonsByDay.get(k).push(l);
+  }
+
+  const grid = h('div', { class: 'cal-grid' });
+  ['D','S','T','Q','Q','S','S'].forEach(d => grid.appendChild(h('div', { class: 'cal-dow' }, d)));
+
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(gridStart, i);
+    const outside = d.getMonth() !== viewMonth.getMonth();
+    const isToday = d.getTime() === today.getTime();
+    const k = dayKey(d.toISOString());
+    const ls = lessonsByDay.get(k) || [];
+
+    const cell = h('div', {
+      class: `cal-cell${outside ? ' outside' : ''}${isToday ? ' today' : ''}${ls.length > 0 ? ' has-lessons' : ''}`,
+      onClick: async () => {
+        const dt = new Date(d);
+        dt.setHours(14, 0, 0, 0);
+        const r = await lessonDialog(null, dt);
+        if (r && !r.deleted) { await addLesson(r); rerender(); }
+      },
+    },
+      h('div', { class: 'num' }, d.getDate()),
+      h('div', { class: 'pip-row' },
+        ...ls.slice(0, 4).map(l => h('div', {
+          class: 'pip',
+          style: { background: studentMap[l.studentId]?.color || '#5eead4' },
+        })),
+      ),
+    );
+    grid.appendChild(cell);
+    if (d > monthEnd && i % 7 === 6) break; // stop at end of week containing month end
+  }
+  root.appendChild(grid);
+
+  // List of lessons in this month, sorted
+  const monthLessons = data.lessons
+    .filter(l => {
+      const d = new Date(l.startISO);
+      return d >= monthStart && d <= monthEnd;
+    })
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+
+  root.appendChild(h('div', { class: 'cal-list' }));
+  if (monthLessons.length === 0) {
+    root.appendChild(emptyState('Nada marcado neste mês', 'Toque em um dia ou no botão Aula pra adicionar.'));
+  } else {
+    let lastDay = '';
+    for (const l of monthLessons) {
+      const s = studentMap[l.studentId];
+      const k = dayKey(l.startISO);
+      if (k !== lastDay) {
+        lastDay = k;
+        root.appendChild(h('div', { class: 'day-head', style: { marginTop: '14px' } },
+          h('span', { class: 'day-name' }, fmtDateRelative(l.startISO)),
+        ));
+      }
+      root.appendChild(lessonRow(l, s));
+    }
+  }
+  return root;
+}
+
+export function lessonRow(l, s) {
+  const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
+  return h('div', { class: `lesson ${l.status}` },
+    h('div', { class: 'dot', style: { background: s?.color || '#5eead4' } }),
+    h('div', { class: 'body' },
+      h('div', { class: 'name' }, s?.name || 'Aluno apagado'),
+      h('div', { class: 'meta' },
+        fmtTime(l.startISO),
+        ' · ',
+        (l.durationMinutes / 60).toString().replace('.', ',') + 'h',
+        l.notes ? ' · ' + l.notes : '',
+      ),
+    ),
+    h('div', { class: 'price' }, fmtMoney(valor)),
+    h('div', { class: 'lesson-actions' },
+      l.status === 'scheduled' && h('button', {
+        class: 'btn btn-ghost btn-sm',
+        title: 'Marcar como dada',
+        onClick: async () => { await setLessonStatus(l.id, 'completed'); rerender(); },
+      }, icon('check')),
+      l.status === 'completed' && h('button', {
+        class: 'btn btn-ghost btn-sm',
+        title: 'Reabrir',
+        onClick: async () => { await setLessonStatus(l.id, 'scheduled'); rerender(); },
+      }, '↺'),
+      h('button', {
+        class: 'btn btn-ghost btn-sm',
+        title: 'Editar',
+        onClick: async () => {
+          const r = await editLesson(l);
+          if (r === 'deleted') return rerender();
+          if (r) { await updateLesson(l.id, r); rerender(); }
+        },
+      }, icon('edit')),
+    ),
+  );
+}
+
+async function editLesson(l) {
+  const { data } = getState();
+  const students = data.students;
+  const form = h('form');
+  form.append(
+    h('div', { class: 'field' },
+      h('label', null, 'Aluno'),
+      h('select', { name: 'studentId', required: true },
+        ...students.map(s => h('option', { value: s.id, selected: l.studentId === s.id }, s.name)),
+      ),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Data e hora'),
+      h('input', { name: 'start', type: 'datetime-local', required: true, value: toDateTimeLocal(l.startISO) }),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Duração (minutos)'),
+      h('input', { name: 'duration', type: 'number', step: '15', min: '15', required: true, value: l.durationMinutes }),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Status'),
+      h('select', { name: 'status' },
+        h('option', { value: 'scheduled', selected: l.status === 'scheduled' }, 'Agendada'),
+        h('option', { value: 'completed', selected: l.status === 'completed' }, 'Concluída'),
+        h('option', { value: 'cancelled', selected: l.status === 'cancelled' }, 'Cancelada'),
+      ),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Notas'),
+      h('textarea', { name: 'notes', rows: 2 }, l.notes || ''),
+    ),
+  );
+  return openModal({
+    title: 'Editar aula',
+    body: form,
+    actions: [
+      h('button', {
+        type: 'button',
+        class: 'btn btn-danger btn-sm',
+        onClick: async (_, close) => {
+          const ok = await confirm('Apagar esta aula?');
+          if (ok) { await deleteLesson(l.id); close('deleted'); }
+        },
+      }, 'Apagar'),
+      { label: 'Cancelar', variant: 'btn-ghost', value: null },
+      { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
+        if (!form.reportValidity()) return false;
+        close({
+          studentId: form.studentId.value,
+          startISO: fromDateTimeLocal(form.start.value),
+          durationMinutes: form.duration.value,
+          status: form.status.value,
+          notes: form.notes.value,
+        });
+      } },
+    ],
+  });
+}
