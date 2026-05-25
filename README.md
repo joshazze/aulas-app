@@ -1,13 +1,13 @@
 # aulas-app
 
-PWA pessoal pra gerenciar aulas particulares: alunos, agenda, pagamentos e estatísticas. Tudo cifrado localmente — nada sai do dispositivo.
+PWA pessoal pra gerenciar aulas particulares: alunos, agenda, pagamentos e estatísticas. Tudo fica no `localStorage` do dispositivo — sem servidor, sem login.
 
 ## Rodar
 
 ```bash
 npm install
 node scripts/gen-icons.mjs   # gera PNG dos ícones (uma vez)
-npm run dev                  # http://127.0.0.1:5173
+npm run dev                  # http://127.0.0.1:5173/aulas-app/
 ```
 
 ## Build
@@ -27,17 +27,19 @@ Pra publicar manualmente em outra base path:
 BASE_PATH=/qualquer/ npm run build
 ```
 
-## Segurança
+## Dados
 
-- Senha do usuário → PBKDF2 (250k iter, SHA-256) → chave AES-GCM-256
-- Todos os dados (alunos, aulas, pagamentos) ficam em `localStorage` cifrados
-- A senha **nunca** é salva — só um verificador cifrado pra checar o login
-- Sem servidor. Sem analytics. Sem reset de senha (perdeu → recomeçar do zero)
+- Tudo mora em `localStorage` (`aulas:data`) como JSON puro
+- Sem servidor, sem analytics, sem sync
+- "Apagar tudo" em Stats limpa o storage e recarrega
 
 ## Backup
 
-Em **Estatísticas** → **Conta & backup** dá pra exportar/importar um JSON cifrado.
-O JSON é seguro de guardar em iCloud/Drive desde que a senha seja forte.
+Em **Estatísticas → Backup**: exportar/importar JSON puro. Não há senha — qualquer um com o arquivo consegue ler. Trate como dado normal.
+
+## Migração de versão antiga (cifrada)
+
+Versões anteriores cifravam o storage com senha PBKDF2/AES-GCM. Na primeira abertura desta versão, se houver dados antigos, o app pede a senha uma única vez para decifrar e regravar em texto puro. Depois disso o app nunca mais pede senha.
 
 ## Estrutura
 
@@ -46,11 +48,11 @@ src/
 ├── main.js                bootstrap + router
 ├── styles.css             tema dark, mid-tones
 ├── lib/
-│   ├── crypto.js          PBKDF2 + AES-GCM
-│   ├── storage.js         LS cifrado (register/login/persist)
-│   ├── state.js           store + mutate(fn) cifra+persiste
+│   ├── crypto.js          legado — usado só na migração one-shot
+│   ├── storage.js         LS plain (load/persist/export/import + migrateLegacy)
+│   ├── state.js           store + mutate(fn) persiste
 │   ├── router.js          hash router
 │   └── format.js          BRL, datas pt-BR
 ├── components/            ui.js, modal.js, nav.js
-└── views/                 auth, dashboard, students, schedule, payments, stats
+└── views/                 dashboard, students, schedule, payments, stats, migrate
 ```

@@ -1,5 +1,4 @@
 import { h, icon } from './ui.js';
-import { getState, logout } from '../lib/state.js';
 
 const tabs = [
   { path: '/', label: 'Hoje', icon: 'home' },
@@ -19,16 +18,8 @@ const titles = {
 
 export function topBar() {
   const path = (location.hash || '#/').slice(1) || '/';
-  const meta = getState().meta;
   return h('header', { class: 'topbar' },
     h('div', { class: 'title' }, titles[path] || 'Aulas'),
-    h('div', { class: 'user' },
-      h('span', null, '@' + (meta?.username || '')),
-      h('button', {
-        title: 'Sair',
-        onClick: () => logout(),
-      }, 'Sair'),
-    ),
   );
 }
 

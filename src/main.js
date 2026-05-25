@@ -1,9 +1,10 @@
 import './styles.css';
 import { defineRoute, setNotFound, setBeforeEach, start, navigate } from './lib/router.js';
-import { isAuthed, subscribe, autoCompletePastLessons } from './lib/state.js';
+import { setSession, autoCompletePastLessons, hasData } from './lib/state.js';
+import { loadOrInit, legacyEncryptedDataExists } from './lib/storage.js';
 import { h } from './components/ui.js';
 import { topBar, bottomNav } from './components/nav.js';
-import { renderAuth } from './views/auth.js';
+import { renderMigrate } from './views/migrate.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderStudents } from './views/students.js';
 import { renderSchedule } from './views/schedule.js';
@@ -20,7 +21,7 @@ function shell(view) {
   );
 }
 
-defineRoute('/auth', () => renderAuth());
+defineRoute('/migrate', () => renderMigrate());
 defineRoute('/', async () => shell(await renderDashboard()));
 defineRoute('/alunos', async () => shell(await renderStudents()));
 defineRoute('/agenda', async () => shell(await renderSchedule()));
@@ -33,22 +34,23 @@ setNotFound(async () => shell(h('div', { class: 'empty' },
 )));
 
 setBeforeEach(async (path) => {
-  if (!isAuthed() && path !== '/auth') {
-    navigate('/auth');
-    return true;
+  if (legacyEncryptedDataExists()) {
+    if (path !== '/migrate') {
+      navigate('/migrate');
+      return true;
+    }
+    return false;
   }
-  if (isAuthed() && path === '/auth') {
+  if (path === '/migrate') {
     navigate('/');
     return true;
   }
-  if (isAuthed()) {
+  if (!hasData()) {
+    await setSession(loadOrInit());
+  } else {
     await autoCompletePastLessons();
   }
   return false;
-});
-
-subscribe(() => {
-  // re-render on session change (login/logout)
 });
 
 start(app);

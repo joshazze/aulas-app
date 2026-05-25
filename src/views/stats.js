@@ -1,9 +1,7 @@
 import { h } from '../components/ui.js';
-import { openModal } from '../components/modal.js';
-import { getState, wipeAccount } from '../lib/state.js';
-import { exportEncrypted, importEncrypted } from '../lib/storage.js';
-import { setSession } from '../lib/state.js';
-import { fmtMoney, fmtMonthShort, startOfMonth } from '../lib/format.js';
+import { getState, wipeAllData, setSession } from '../lib/state.js';
+import { exportData, importData } from '../lib/storage.js';
+import { fmtMoney, fmtMonthShort } from '../lib/format.js';
 
 export async function renderStats() {
   const root = h('div');
@@ -17,6 +15,7 @@ export async function renderStats() {
   let totalEarned = 0;
   let totalMinutes = 0;
   let plannedNext28 = 0;
+  let plannedAllFuture = 0;
   let countCompleted = 0;
   let countScheduledFuture = 0;
   const lessonsByMonth = new Map();
@@ -36,6 +35,7 @@ export async function renderStats() {
       minutesByStudent.set(l.studentId, (minutesByStudent.get(l.studentId) || 0) + l.durationMinutes);
     } else if (l.status === 'scheduled' && d >= todayStart) {
       countScheduledFuture++;
+      plannedAllFuture += value;
       if (d <= monthAhead) plannedNext28 += value;
     }
   }
@@ -48,7 +48,7 @@ export async function renderStats() {
   root.appendChild(h('div', { class: 'stat-grid' },
     statCard('Recebido', fmtMoney(totalReceived), 'good', `${data.payments.length} pagamentos`),
     statCard('A receber', fmtMoney(toReceive), toReceive > 0 ? 'warn' : '', 'aulas concluídas não pagas'),
-    statCard('Ganho total', fmtMoney(totalEarned), '', `${countCompleted} aula${countCompleted === 1 ? '' : 's'}`),
+    statCard('Ganho total', fmtMoney(totalEarned + plannedAllFuture), '', `${countCompleted} concluídas · ${countScheduledFuture} agendadas`),
     statCard('Planejado', fmtMoney(plannedNext28), 'accent', `próx. 4 semanas · ${countScheduledFuture} agendadas`),
     statCard('Horas trabalhadas', totalHours.toFixed(1).replace('.', ',') + 'h', '', `média ${(totalMinutes / Math.max(countCompleted, 1)).toFixed(0)} min/aula`),
     statCard('R$ médio / hora', fmtMoney(avgRate), 'accent', 'sobre horas concluídas'),
@@ -100,20 +100,19 @@ export async function renderStats() {
     root.appendChild(topCard);
   }
 
-  // Settings card
-  const meta = getState().meta;
+  // Backup card
   root.appendChild(h('div', { class: 'chart-card' },
-    h('h3', null, 'Conta & backup'),
+    h('h3', null, 'Backup'),
     h('div', { class: 'row', style: { gap: '10px', flexWrap: 'wrap' } },
-      h('button', { class: 'btn btn-sm', onClick: doExport }, 'Exportar backup cifrado'),
+      h('button', { class: 'btn btn-sm', onClick: doExport }, 'Exportar backup'),
       h('button', { class: 'btn btn-sm', onClick: doImport }, 'Importar backup'),
       h('button', { class: 'btn btn-sm btn-danger', onClick: async () => {
         const ok = window.confirm('Apagar TODOS os dados deste dispositivo? Sem volta.');
-        if (ok) wipeAccount();
+        if (ok) wipeAllData();
       } }, 'Apagar tudo'),
     ),
     h('p', { class: 'small muted', style: { marginTop: '12px', marginBottom: 0 } },
-      `Conta: @${meta?.username}. Dados ficam apenas neste dispositivo; o backup é um JSON cifrado com a mesma senha.`,
+      'Dados ficam apenas neste dispositivo. O backup é um JSON puro — sem senha, qualquer um com o arquivo consegue ler.',
     ),
   ));
 
@@ -140,8 +139,8 @@ function statCard(label, value, tone, sub) {
   );
 }
 
-async function doExport() {
-  const json = await exportEncrypted();
+function doExport() {
+  const json = exportData();
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -151,39 +150,22 @@ async function doExport() {
   URL.revokeObjectURL(url);
 }
 
-async function doImport() {
+function doImport() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'application/json,.json';
   input.onchange = async () => {
     const f = input.files?.[0];
     if (!f) return;
-    const text = await f.text();
-    const pwInput = h('input', { type: 'password', required: true, autocomplete: 'current-password' });
-    const result = await openModal({
-      title: 'Importar backup',
-      body: h('div', null,
-        h('p', { class: 'muted small', style: { marginTop: 0 } }, 'Digite a senha do backup. Vai substituir os dados atuais.'),
-        h('div', { class: 'field' },
-          h('label', null, 'Senha do backup'),
-          pwInput,
-        ),
-      ),
-      actions: [
-        { label: 'Cancelar', variant: 'btn-ghost', value: null },
-        { label: 'Importar', variant: 'btn-primary', onClick: async (_, close) => {
-          try {
-            const session = await importEncrypted(text, pwInput.value);
-            await setSession(session);
-            close(true);
-            location.hash = '#/';
-          } catch (e) {
-            alert(e.message);
-            return false;
-          }
-        } },
-      ],
-    });
+    if (!window.confirm('Importar vai substituir os dados atuais. Continuar?')) return;
+    try {
+      const text = await f.text();
+      const session = importData(text);
+      await setSession(session);
+      location.hash = '#/';
+    } catch (e) {
+      alert(e.message);
+    }
   };
   input.click();
 }

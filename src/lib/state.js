@@ -1,7 +1,6 @@
 import { persist, wipeAll } from './storage.js';
 
 const state = {
-  key: null,
   meta: null,
   data: null,
   listeners: new Set(),
@@ -11,8 +10,8 @@ export function getState() {
   return state;
 }
 
-export function isAuthed() {
-  return !!state.key;
+export function hasData() {
+  return !!state.data;
 }
 
 export function subscribe(fn) {
@@ -26,8 +25,7 @@ function notify() {
   }
 }
 
-export async function setSession({ key, data, meta }) {
-  state.key = key;
+export async function setSession({ data, meta }) {
   state.data = data;
   state.meta = meta;
   await autoCompletePastLessons();
@@ -36,7 +34,7 @@ export async function setSession({ key, data, meta }) {
 
 let lastAutoCompleteRun = 0;
 export async function autoCompletePastLessons() {
-  if (!state.data || !state.key) return 0;
+  if (!state.data) return 0;
   const now = Date.now();
   if (now - lastAutoCompleteRun < 15_000) return 0;
   lastAutoCompleteRun = now;
@@ -49,33 +47,27 @@ export async function autoCompletePastLessons() {
     }
   }
   if (count > 0) {
-    await persist(state.key, state.data);
+    persist(state.data);
   }
   return count;
 }
 
 export function clearSession() {
-  state.key = null;
   state.data = null;
   state.meta = null;
   notify();
 }
 
-export function logout() {
-  clearSession();
-  location.hash = '#/auth';
-}
-
-export function wipeAccount() {
+export function wipeAllData() {
   wipeAll();
   clearSession();
-  location.hash = '#/auth';
+  location.reload();
 }
 
 export async function mutate(fn) {
-  if (!state.key || !state.data) throw new Error('Sem sessão.');
+  if (!state.data) throw new Error('Sem dados.');
   fn(state.data);
-  await persist(state.key, state.data);
+  persist(state.data);
   notify();
 }
 
