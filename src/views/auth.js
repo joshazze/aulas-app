@@ -26,7 +26,7 @@ export function renderAuth() {
       const session = isRegister
         ? await register(username, password)
         : await login(password);
-      setSession(session);
+      await setSession(session);
       navigate('/');
     } catch (err) {
       errorSlot.appendChild(errorBox(err.message));

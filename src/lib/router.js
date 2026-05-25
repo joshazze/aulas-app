@@ -37,7 +37,7 @@ function currentPath() {
 async function resolve() {
   const path = currentPath() || '/';
   if (beforeEach) {
-    const redirected = beforeEach(path);
+    const redirected = await beforeEach(path);
     if (redirected) return;
   }
   const handler = routes.get(path) || notFound;

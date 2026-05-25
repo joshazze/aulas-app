@@ -174,7 +174,7 @@ async function doImport() {
         { label: 'Importar', variant: 'btn-primary', onClick: async (_, close) => {
           try {
             const session = await importEncrypted(text, pwInput.value);
-            setSession(session);
+            await setSession(session);
             close(true);
             location.hash = '#/';
           } catch (e) {

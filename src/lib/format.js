@@ -18,6 +18,36 @@ export function fmtHours(minutes) {
   return `${h.toFixed(1).replace('.', ',')}h`;
 }
 
+export function fmtDuration(minutes) {
+  if (minutes < 60) return `${minutes}min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (m === 0) return `${h}h`;
+  return `${h}h${String(m).padStart(2, '0')}`;
+}
+
+const DOW_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const DOW_LONG  = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+export function fmtCompactDateTime(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const dayStart = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((dayStart(d) - dayStart(now)) / 86400000);
+  const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  if (diff === 0) return `Hoje (${dd}/${mm}) ${time}`;
+  if (diff === 1) return `Amanhã (${dd}/${mm}) ${time}`;
+  if (diff === -1) return `Ontem (${dd}/${mm}) ${time}`;
+  if (diff > 1 && diff < 7) return `${DOW_LONG[d.getDay()]} (${dd}/${mm}) ${time}`;
+  return `${DOW_SHORT[d.getDay()]} ${dd}/${mm} ${time}`;
+}
+
+export function firstName(name) {
+  return (name || '').trim().split(/\s+/)[0] || '';
+}
+
 export function fmtDateRelative(iso) {
   const d = new Date(iso);
   const now = new Date();
@@ -29,7 +59,12 @@ export function fmtDateRelative(iso) {
   if (diffDays > 1 && diffDays < 7) {
     return ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][d.getDay()];
   }
-  return fmtDateLong(iso);
+  if (diffDays < -1 && diffDays > -7) {
+    return ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][d.getDay()];
+  }
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  return `${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()]} ${dd}/${mm}`;
 }
 
 export function dayKey(iso) {

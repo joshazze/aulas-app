@@ -1,8 +1,9 @@
-import { h, icon, emptyState } from '../components/ui.js';
+import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
 import { getState } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
 import { lessonRow } from './schedule.js';
 import { navigate } from '../lib/router.js';
+import { buildSummary } from '../lib/whatsapp.js';
 
 export async function renderDashboard() {
   const root = h('div');
@@ -42,6 +43,12 @@ export async function renderDashboard() {
       h('div', { class: 'sub' }, `${next7.length} aula${next7.length === 1 ? '' : 's'}`),
     ),
   ));
+
+  root.appendChild(h('button', {
+    class: 'btn btn-block',
+    style: { marginBottom: '18px', justifyContent: 'flex-start' },
+    onClick: (e) => copyWithFeedback(buildSummary(data), e.currentTarget),
+  }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
 
   if (upcoming.length === 0) {
     root.appendChild(emptyState(

@@ -109,24 +109,30 @@ export async function renderStudents() {
 }
 
 function studentRow(s) {
+  const openEdit = async () => {
+    const patch = await studentDialog(s);
+    if (patch) {
+      await updateStudent(s.id, patch);
+      rerender();
+    }
+  };
   return h('div', { class: 'student' + (s.archived ? ' archived' : '') },
     avatarFor(s),
-    h('div', { class: 'info' },
+    h('div', {
+      class: 'info',
+      style: { cursor: 'pointer' },
+      title: 'Toque pra editar',
+      onClick: openEdit,
+    },
       h('div', { class: 'name' }, s.name),
       h('div', { class: 'rate' }, fmtMoney(s.hourlyRate) + ' / hora'),
     ),
     h('div', { class: 'actions' },
       h('button', {
-        class: 'btn btn-ghost btn-sm',
-        title: 'Editar',
-        onClick: async () => {
-          const patch = await studentDialog(s);
-          if (patch) {
-            await updateStudent(s.id, patch);
-            rerender();
-          }
-        },
-      }, icon('edit')),
+        class: 'btn btn-sm',
+        title: 'Editar aluno',
+        onClick: openEdit,
+      }, icon('edit'), 'Editar'),
       s.archived
         ? h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { await unarchiveStudent(s.id); rerender(); } }, 'Reativar')
         : h('button', { class: 'btn btn-ghost btn-sm', onClick: async () => { await archiveStudent(s.id); rerender(); } }, 'Arquivar'),

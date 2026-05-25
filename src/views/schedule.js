@@ -1,8 +1,9 @@
-import { h, icon, emptyState } from '../components/ui.js';
+import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
 import { rerender } from '../lib/router.js';
+import { buildConfirmation } from '../lib/whatsapp.js';
 
 let viewMonth = startOfMonth(new Date());
 
@@ -141,13 +142,22 @@ export async function renderSchedule() {
   }
   root.appendChild(grid);
 
-  // List of lessons in this month, sorted
+  // List of lessons in this month, sorted: upcoming asc, then past desc
+  const nowMs = Date.now();
   const monthLessons = data.lessons
     .filter(l => {
       const d = new Date(l.startISO);
       return d >= monthStart && d <= monthEnd;
     })
-    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+    .sort((a, b) => {
+      const aT = new Date(a.startISO).getTime();
+      const bT = new Date(b.startISO).getTime();
+      const aPast = aT < nowMs;
+      const bPast = bT < nowMs;
+      if (aPast !== bPast) return aPast ? 1 : -1;
+      if (aPast) return bT - aT;
+      return aT - bT;
+    });
 
   root.appendChild(h('div', { class: 'cal-list' }));
   if (monthLessons.length === 0) {
@@ -171,6 +181,7 @@ export async function renderSchedule() {
 
 export function lessonRow(l, s) {
   const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
+  const isUpcoming = l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now();
   return h('div', { class: `lesson ${l.status}` },
     h('div', { class: 'dot', style: { background: s?.color || '#5eead4' } }),
     h('div', { class: 'body' },
@@ -184,6 +195,11 @@ export function lessonRow(l, s) {
     ),
     h('div', { class: 'price' }, fmtMoney(valor)),
     h('div', { class: 'lesson-actions' },
+      isUpcoming && h('button', {
+        class: 'btn btn-ghost btn-sm',
+        title: 'Copiar confirmação p/ WhatsApp',
+        onClick: (e) => copyWithFeedback(buildConfirmation(l, s), e.currentTarget),
+      }, icon('copy')),
       l.status === 'scheduled' && h('button', {
         class: 'btn btn-ghost btn-sm',
         title: 'Marcar como dada',
@@ -196,7 +212,7 @@ export function lessonRow(l, s) {
       }, '↺'),
       h('button', {
         class: 'btn btn-ghost btn-sm',
-        title: 'Editar',
+        title: 'Editar aula',
         onClick: async () => {
           const r = await editLesson(l);
           if (r === 'deleted') return rerender();

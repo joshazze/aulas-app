@@ -26,11 +26,32 @@ function notify() {
   }
 }
 
-export function setSession({ key, data, meta }) {
+export async function setSession({ key, data, meta }) {
   state.key = key;
   state.data = data;
   state.meta = meta;
+  await autoCompletePastLessons();
   notify();
+}
+
+let lastAutoCompleteRun = 0;
+export async function autoCompletePastLessons() {
+  if (!state.data || !state.key) return 0;
+  const now = Date.now();
+  if (now - lastAutoCompleteRun < 15_000) return 0;
+  lastAutoCompleteRun = now;
+  let count = 0;
+  for (const l of state.data.lessons) {
+    if (l.status !== 'scheduled') continue;
+    if (new Date(l.startISO).getTime() < now) {
+      l.status = 'completed';
+      count++;
+    }
+  }
+  if (count > 0) {
+    await persist(state.key, state.data);
+  }
+  return count;
 }
 
 export function clearSession() {

@@ -1,6 +1,6 @@
 import './styles.css';
 import { defineRoute, setNotFound, setBeforeEach, start, navigate } from './lib/router.js';
-import { isAuthed, subscribe } from './lib/state.js';
+import { isAuthed, subscribe, autoCompletePastLessons } from './lib/state.js';
 import { h } from './components/ui.js';
 import { topBar, bottomNav } from './components/nav.js';
 import { renderAuth } from './views/auth.js';
@@ -32,7 +32,7 @@ setNotFound(async () => shell(h('div', { class: 'empty' },
   h('a', { href: '#/' }, 'Voltar pro início'),
 )));
 
-setBeforeEach((path) => {
+setBeforeEach(async (path) => {
   if (!isAuthed() && path !== '/auth') {
     navigate('/auth');
     return true;
@@ -40,6 +40,9 @@ setBeforeEach((path) => {
   if (isAuthed() && path === '/auth') {
     navigate('/');
     return true;
+  }
+  if (isAuthed()) {
+    await autoCompletePastLessons();
   }
   return false;
 });
