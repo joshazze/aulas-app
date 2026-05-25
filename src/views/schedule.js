@@ -4,8 +4,36 @@ import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus } from
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
+import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
 
 let viewMonth = startOfMonth(new Date());
+
+// Selection mode state (only used by the agenda view)
+let selectionMode = false;
+let selectedIds = new Set();
+let selectedStudentId = null;
+
+function exitSelection() {
+  selectionMode = false;
+  selectedIds = new Set();
+  selectedStudentId = null;
+}
+
+function isUpcomingScheduled(l) {
+  return l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now();
+}
+
+function toggleSelection(l) {
+  if (selectedIds.has(l.id)) {
+    selectedIds.delete(l.id);
+    if (selectedIds.size === 0) selectedStudentId = null;
+    return;
+  }
+  if (selectedStudentId && l.studentId !== selectedStudentId) return;
+  if (!isUpcomingScheduled(l)) return;
+  selectedStudentId = l.studentId;
+  selectedIds.add(l.id);
+}
 
 async function lessonDialog(existing, defaultDate) {
   const { data } = getState();
@@ -77,6 +105,12 @@ export async function renderSchedule() {
   const { data } = getState();
   const studentMap = Object.fromEntries(data.students.map(s => [s.id, s]));
 
+  if (selectionMode) {
+    const allIds = new Set(data.lessons.map((l) => l.id));
+    selectedIds = new Set([...selectedIds].filter((id) => allIds.has(id)));
+    if (selectedIds.size === 0) selectedStudentId = null;
+  }
+
   // Navigation
   const nav = h('div', { class: 'cal-nav' },
     h('button', { class: 'btn btn-sm', onClick: () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1); rerender(); } }, icon('chevronL')),
@@ -87,13 +121,23 @@ export async function renderSchedule() {
 
   const head = h('div', { class: 'section-head', style: { marginBottom: '10px' } },
     h('button', { class: 'btn btn-sm', onClick: () => { viewMonth = startOfMonth(new Date()); rerender(); } }, 'Hoje'),
-    h('button', {
-      class: 'btn btn-primary btn-sm',
-      onClick: async () => {
-        const r = await lessonDialog(null, new Date());
-        if (r && !r.deleted) { await addLesson(r); rerender(); }
-      },
-    }, icon('plus'), 'Aula'),
+    h('div', { class: 'row', style: { gap: '6px' } },
+      h('button', {
+        class: 'btn btn-sm' + (selectionMode ? ' btn-danger' : ''),
+        onClick: () => {
+          if (selectionMode) exitSelection();
+          else selectionMode = true;
+          rerender();
+        },
+      }, selectionMode ? 'Cancelar' : 'Selecionar'),
+      h('button', {
+        class: 'btn btn-primary btn-sm',
+        onClick: async () => {
+          const r = await lessonDialog(null, new Date());
+          if (r && !r.deleted) { await addLesson(r); rerender(); }
+        },
+      }, icon('plus'), 'Aula'),
+    ),
   );
   root.appendChild(head);
 
@@ -173,16 +217,63 @@ export async function renderSchedule() {
           h('span', { class: 'day-name' }, fmtDateRelative(l.startISO)),
         ));
       }
-      root.appendChild(lessonRow(l, s));
+      root.appendChild(lessonRow(l, s, { selectable: selectionMode }));
     }
   }
+
+  if (selectionMode && selectedIds.size > 0) {
+    root.appendChild(selectionBar(studentMap));
+  }
+
   return root;
 }
 
-export function lessonRow(l, s) {
+function selectionBar(studentMap) {
+  const lessons = data().lessons.filter(l => selectedIds.has(l.id))
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+  const student = studentMap[selectedStudentId];
+  const count = lessons.length;
+  return h('div', { class: 'selection-bar' },
+    h('div', { class: 'sb-info' },
+      h('strong', null, String(count)),
+      ' ',
+      count === 1 ? 'aula de ' : 'aulas de ',
+      h('strong', null, student?.name || '—'),
+    ),
+    h('button', {
+      class: 'btn btn-sm btn-primary',
+      onClick: (e) => copyWithFeedback(buildConfirmation(lessons, student), e.currentTarget),
+    }, icon('copy'), 'Copiar'),
+    h('button', {
+      class: 'btn btn-sm',
+      onClick: () => {
+        const ics = buildICS(lessons, studentMap);
+        downloadICS(icsFilename('aulas-' + (student?.name || 'aluno')), ics);
+      },
+    }, icon('calendar'), 'Calendário'),
+    h('button', {
+      class: 'btn btn-ghost btn-sm',
+      title: 'Sair da seleção',
+      onClick: () => { exitSelection(); rerender(); },
+    }, icon('x')),
+  );
+}
+
+function data() { return getState().data; }
+
+export function lessonRow(l, s, opts = {}) {
   const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
-  const isUpcoming = l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now();
-  return h('div', { class: `lesson ${l.status}` },
+  const isUpcoming = isUpcomingScheduled(l);
+  const selectable = opts.selectable;
+  const selected = selectable && selectedIds.has(l.id);
+  const eligible = isUpcoming && (!selectedStudentId || l.studentId === selectedStudentId || selected);
+  const disabled = selectable && !eligible;
+
+  return h('div', {
+    class: `lesson ${l.status}${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}`,
+    onClick: selectable ? () => { toggleSelection(l); rerender(); } : null,
+  },
+    selectable && h('div', { class: 'sel-check' }, selected ? icon('check') : null),
     h('div', { class: 'dot', style: { background: s?.color || '#5eead4' } }),
     h('div', { class: 'body' },
       h('div', { class: 'name' }, s?.name || 'Aluno apagado'),
@@ -194,7 +285,7 @@ export function lessonRow(l, s) {
       ),
     ),
     h('div', { class: 'price' }, fmtMoney(valor)),
-    h('div', { class: 'lesson-actions' },
+    !selectable && h('div', { class: 'lesson-actions' },
       isUpcoming && h('button', {
         class: 'btn btn-ghost btn-sm',
         title: 'Copiar confirmação p/ WhatsApp',
@@ -226,6 +317,7 @@ export function lessonRow(l, s) {
 async function editLesson(l) {
   const { data } = getState();
   const students = data.students;
+  const s = students.find((x) => x.id === l.studentId);
   const form = h('form');
   form.append(
     h('div', { class: 'field' },
@@ -259,6 +351,15 @@ async function editLesson(l) {
     title: 'Editar aula',
     body: form,
     actions: [
+      h('button', {
+        type: 'button',
+        class: 'btn btn-sm',
+        title: 'Baixar arquivo .ics pro calendário do iPhone/Android',
+        onClick: () => {
+          const ics = buildICS([l], { [l.studentId]: s });
+          downloadICS(icsFilename('aula-' + (s?.name || 'aluno')), ics);
+        },
+      }, icon('calendar'), 'Calendário'),
       h('button', {
         type: 'button',
         class: 'btn btn-danger btn-sm',

@@ -52,14 +52,27 @@ export function buildSummary(data) {
   return lines.join('\n').trim();
 }
 
-export function buildConfirmation(lesson, student) {
+export function buildConfirmation(lessonOrLessons, student) {
+  const arr = Array.isArray(lessonOrLessons) ? lessonOrLessons : [lessonOrLessons];
   const nome = firstName(student?.name) || 'aluno';
+  if (arr.length === 1) {
+    const l = arr[0];
+    return [
+      `Oi ${nome}! Tudo bem?`,
+      '',
+      `Confirmando nossa aula:`,
+      `📅 *${fmtCompactDateTime(l.startISO)}*`,
+      `⏱️ ${fmtDuration(l.durationMinutes)}`,
+      '',
+      `Combinado? 🤝`,
+    ].join('\n');
+  }
+  const sorted = [...arr].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
   return [
     `Oi ${nome}! Tudo bem?`,
     '',
-    `Confirmando nossa aula:`,
-    `📅 *${fmtCompactDateTime(lesson.startISO)}*`,
-    `⏱️ ${fmtDuration(lesson.durationMinutes)}`,
+    `Confirmando nossas ${arr.length} aulas:`,
+    ...sorted.map((l) => `📅 *${fmtCompactDateTime(l.startISO)}* (${fmtDuration(l.durationMinutes)})`),
     '',
     `Combinado? 🤝`,
   ].join('\n');
