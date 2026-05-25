@@ -133,6 +133,7 @@ export async function addLesson({ studentId, startISO, durationMinutes, notes })
       durationMinutes: Number(durationMinutes) || 60,
       status: 'scheduled',
       notes: notes || '',
+      addedToCalendar: false,
       createdAt: new Date().toISOString(),
     });
   });
@@ -142,8 +143,22 @@ export async function updateLesson(id, patch) {
   await mutate((d) => {
     const l = d.lessons.find((x) => x.id === id);
     if (!l) return;
+    const breaksCalendar =
+      ('startISO' in patch && patch.startISO !== l.startISO) ||
+      ('durationMinutes' in patch && Number(patch.durationMinutes) !== l.durationMinutes) ||
+      ('studentId' in patch && patch.studentId !== l.studentId);
     Object.assign(l, patch);
     if ('durationMinutes' in patch) l.durationMinutes = Number(patch.durationMinutes) || 60;
+    if (breaksCalendar) l.addedToCalendar = false;
+  });
+}
+
+export async function markCalendarAdded(ids) {
+  const set = new Set(ids);
+  await mutate((d) => {
+    for (const l of d.lessons) {
+      if (set.has(l.id)) l.addedToCalendar = true;
+    }
   });
 }
 

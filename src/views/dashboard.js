@@ -1,9 +1,10 @@
 import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
-import { getState } from '../lib/state.js';
+import { getState, markCalendarAdded } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
 import { lessonRow } from './schedule.js';
-import { navigate } from '../lib/router.js';
+import { navigate, rerender } from '../lib/router.js';
 import { buildSummary } from '../lib/whatsapp.js';
+import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
 
 export async function renderDashboard() {
   const root = h('div');
@@ -46,9 +47,31 @@ export async function renderDashboard() {
 
   root.appendChild(h('button', {
     class: 'btn btn-block',
-    style: { marginBottom: '18px', justifyContent: 'flex-start' },
+    style: { marginBottom: '10px', justifyContent: 'flex-start' },
     onClick: (e) => copyWithFeedback(buildSummary(data), e.currentTarget),
   }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
+
+  const pendingCalendar = data.lessons.filter((l) =>
+    !l.addedToCalendar &&
+    l.status === 'scheduled' &&
+    new Date(l.startISO).getTime() > Date.now()
+  );
+  const hasPending = pendingCalendar.length > 0;
+  root.appendChild(h('button', {
+    class: 'btn btn-block',
+    style: { marginBottom: '18px', justifyContent: 'flex-start' },
+    disabled: !hasPending,
+    onClick: hasPending ? async () => {
+      const ics = buildICS(pendingCalendar, studentMap);
+      downloadICS(icsFilename('aulas-novas'), ics);
+      await markCalendarAdded(pendingCalendar.map((l) => l.id));
+      rerender();
+    } : null,
+  }, icon('calendar'),
+    hasPending
+      ? `Sincronizar calendário (${pendingCalendar.length})`
+      : 'Calendário sincronizado ✓',
+  ));
 
   if (upcoming.length === 0) {
     root.appendChild(emptyState(

@@ -1,6 +1,6 @@
 import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
-import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus } from '../lib/state.js';
+import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus, markCalendarAdded } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
@@ -186,12 +186,15 @@ export async function renderSchedule() {
   }
   root.appendChild(grid);
 
-  // List of lessons in this month, sorted: upcoming asc, then past desc
+  // List of lessons in this month, sorted: upcoming asc, then past desc.
+  // In selection mode, hide past/non-scheduled — only futuras agendadas aparecem.
   const nowMs = Date.now();
   const monthLessons = data.lessons
     .filter(l => {
       const d = new Date(l.startISO);
-      return d >= monthStart && d <= monthEnd;
+      if (d < monthStart || d > monthEnd) return false;
+      if (selectionMode && !isUpcomingScheduled(l)) return false;
+      return true;
     })
     .sort((a, b) => {
       const aT = new Date(a.startISO).getTime();
@@ -246,9 +249,11 @@ function selectionBar(studentMap) {
     }, icon('copy'), 'Copiar'),
     h('button', {
       class: 'btn btn-sm',
-      onClick: () => {
+      onClick: async () => {
         const ics = buildICS(lessons, studentMap);
         downloadICS(icsFilename('aulas-' + (student?.name || 'aluno')), ics);
+        await markCalendarAdded(lessons.map((l) => l.id));
+        rerender();
       },
     }, icon('calendar'), 'Calendário'),
     h('button', {
@@ -355,9 +360,10 @@ async function editLesson(l) {
         type: 'button',
         class: 'btn btn-sm',
         title: 'Baixar arquivo .ics pro calendário do iPhone/Android',
-        onClick: () => {
+        onClick: async () => {
           const ics = buildICS([l], { [l.studentId]: s });
           downloadICS(icsFilename('aula-' + (s?.name || 'aluno')), ics);
+          await markCalendarAdded([l.id]);
         },
       }, icon('calendar'), 'Calendário'),
       h('button', {

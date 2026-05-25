@@ -217,16 +217,17 @@ a { color: var(--accent); text-decoration: none; }
   gap: 8px;
   padding: 11px 16px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   color: var(--text);
   font-weight: 600;
   font-size: 14px;
   transition: all 0.1s;
 }
 
-.btn:hover { border-color: var(--border-strong); }
+.btn:hover { border-color: var(--accent); }
 .btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: default; }
 
 .btn-primary {
   background: var(--accent);
@@ -239,6 +240,7 @@ a { color: var(--accent); text-decoration: none; }
 .btn-danger {
   border-color: var(--danger);
   color: var(--danger);
+  background: var(--surface-2);
 }
 
 .btn-danger:hover { background: var(--danger-soft); }
@@ -246,10 +248,10 @@ a { color: var(--accent); text-decoration: none; }
 .btn-ghost {
   background: transparent;
   border-color: transparent;
-  color: var(--text-2);
+  color: var(--text);
 }
 
-.btn-ghost:hover { color: var(--text); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 
 .btn-block { width: 100%; }
 .btn-sm { padding: 6px 10px; font-size: 12px; }
