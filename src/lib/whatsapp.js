@@ -12,14 +12,32 @@ function fmtDM(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export function buildSummary(data) {
+function fmtBRL(n) {
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function lessonValue(l, studentMap) {
+  const s = studentMap[l.studentId];
+  return (l.durationMinutes / 60) * (s?.hourlyRate || 0);
+}
+
+function lessonLine(l, studentMap, showValues) {
+  const s = studentMap[l.studentId];
+  const meta = [fmtDuration(l.durationMinutes)];
+  if (showValues) meta.push(fmtBRL(lessonValue(l, studentMap)));
+  return `• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${meta.join(' · ')})`;
+}
+
+export function buildSummary(data, opts = {}) {
+  const include = opts.include || 'both';
+  const showValues = !!opts.showValues;
   const studentMap = Object.fromEntries(data.students.map((s) => [s.id, s]));
   const now = new Date();
   const cycleStart = lastCycleStart(now);
   const cycleStartMs = cycleStart.getTime();
   const nowMs = now.getTime();
 
-  const completed = data.lessons
+  const past = data.lessons
     .filter((l) => {
       if (l.status === 'cancelled') return false;
       const t = new Date(l.startISO).getTime();
@@ -27,18 +45,41 @@ export function buildSummary(data) {
     })
     .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
 
-  const header = `📚 *Aulas dadas* _(${fmtDM(cycleStart)} a ${fmtDM(now)})_`;
+  const future = data.lessons
+    .filter((l) => l.status === 'scheduled' && new Date(l.startISO).getTime() > nowMs)
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
 
-  if (completed.length === 0) {
-    return [header, '', `_Nenhuma aula dada desde ${fmtDM(cycleStart)}._`].join('\n');
+  const sections = [];
+
+  if (include === 'past' || include === 'both') {
+    const header = `📚 *Aulas dadas* _(${fmtDM(cycleStart)} a ${fmtDM(now)})_`;
+    if (past.length === 0) {
+      sections.push([header, `_Nenhuma aula dada desde ${fmtDM(cycleStart)}._`].join('\n'));
+    } else {
+      const lines = [header, ...past.map((l) => lessonLine(l, studentMap, showValues))];
+      if (showValues) {
+        const total = past.reduce((sum, l) => sum + lessonValue(l, studentMap), 0);
+        lines.push(`*Total: ${fmtBRL(total)}*`);
+      }
+      sections.push(lines.join('\n'));
+    }
   }
 
-  const lines = [header, ''];
-  for (const l of completed) {
-    const s = studentMap[l.studentId];
-    lines.push(`• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${fmtDuration(l.durationMinutes)})`);
+  if (include === 'future' || include === 'both') {
+    const header = '📅 *Aulas marcadas*';
+    if (future.length === 0) {
+      sections.push([header, '_Nenhuma aula marcada._'].join('\n'));
+    } else {
+      const lines = [header, ...future.map((l) => lessonLine(l, studentMap, showValues))];
+      if (showValues) {
+        const total = future.reduce((sum, l) => sum + lessonValue(l, studentMap), 0);
+        lines.push(`*Total: ${fmtBRL(total)}*`);
+      }
+      sections.push(lines.join('\n'));
+    }
   }
-  return lines.join('\n').trim();
+
+  return sections.join('\n\n').trim();
 }
 
 export function buildConfirmation(lessonOrLessons, student) {

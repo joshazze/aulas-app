@@ -1,4 +1,5 @@
-import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
+import { h, icon, emptyState, copyToClipboard } from '../components/ui.js';
+import { openModal } from '../components/modal.js';
 import { getState, markCalendarAdded } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
 import { lessonRow } from './schedule.js';
@@ -13,6 +14,83 @@ import {
   pruneSelection,
   selectionBar,
 } from '../lib/selection.js';
+
+const SUMMARY_PREFS_KEY = 'aulas:summaryPrefs';
+
+function loadSummaryPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SUMMARY_PREFS_KEY) || 'null');
+    if (raw && typeof raw === 'object') {
+      return {
+        include: ['past', 'future', 'both'].includes(raw.include) ? raw.include : 'both',
+        showValues: !!raw.showValues,
+      };
+    }
+  } catch {}
+  return { include: 'both', showValues: false };
+}
+
+function saveSummaryPrefs(prefs) {
+  try { localStorage.setItem(SUMMARY_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
+async function openSummaryDialog(data) {
+  const prefs = loadSummaryPrefs();
+  let include = prefs.include;
+  let showValues = prefs.showValues;
+
+  const pillRow = (options, current, onPick) => {
+    const row = h('div', { class: 'pill-row' });
+    const buttons = options.map((opt) => h('button', {
+      type: 'button',
+      class: `pill${current === opt.value ? ' active' : ''}`,
+      onClick: () => {
+        current = opt.value;
+        for (const b of buttons) b.classList.remove('active');
+        const me = buttons.find((b) => b.dataset.value === opt.value);
+        if (me) me.classList.add('active');
+        onPick(opt.value);
+      },
+      dataset: { value: opt.value },
+    }, opt.label));
+    for (const b of buttons) row.appendChild(b);
+    return row;
+  };
+
+  const body = h('div', {},
+    h('div', { class: 'field' },
+      h('label', null, 'Quais aulas'),
+      pillRow(
+        [{ value: 'past', label: 'Dadas' }, { value: 'future', label: 'Marcadas' }, { value: 'both', label: 'Ambas' }],
+        include,
+        (v) => { include = v; },
+      ),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Valores'),
+      pillRow(
+        [{ value: 'hide', label: 'Ocultar' }, { value: 'show', label: 'Mostrar' }],
+        showValues ? 'show' : 'hide',
+        (v) => { showValues = v === 'show'; },
+      ),
+    ),
+  );
+
+  return openModal({
+    title: 'Resumo p/ WhatsApp',
+    body,
+    actions: [
+      { label: 'Cancelar', variant: 'btn-ghost', value: null },
+      { label: 'Copiar', variant: 'btn-primary', onClick: async (_, close) => {
+        const finalPrefs = { include, showValues };
+        saveSummaryPrefs(finalPrefs);
+        const text = buildSummary(data, finalPrefs);
+        const ok = await copyToClipboard(text);
+        close(ok ? 'copied' : 'failed');
+      } },
+    ],
+  });
+}
 
 export async function renderDashboard() {
   const root = h('div');
@@ -73,7 +151,19 @@ export async function renderDashboard() {
     root.appendChild(h('button', {
       class: 'btn btn-block',
       style: { marginBottom: '10px', justifyContent: 'flex-start' },
-      onClick: (e) => copyWithFeedback(buildSummary(data), e.currentTarget),
+      onClick: async (e) => {
+        const btn = e.currentTarget;
+        const original = btn.innerHTML;
+        const result = await openSummaryDialog(data);
+        if (result === 'copied') {
+          btn.textContent = '✓ Copiado';
+          btn.disabled = true;
+          setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1500);
+        } else if (result === 'failed') {
+          btn.textContent = 'Falhou ao copiar';
+          setTimeout(() => { btn.innerHTML = original; }, 1500);
+        }
+      },
     }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
 
     const pendingCalendar = data.lessons.filter((l) =>
