@@ -3,6 +3,7 @@ import { h, icon } from './ui.js';
 const tabs = [
   { path: '/', label: 'Hoje', icon: 'home' },
   { path: '/agenda', label: 'Agenda', icon: 'calendar' },
+  { path: '/historico', label: 'Histórico', icon: 'history' },
   { path: '/alunos', label: 'Alunos', icon: 'users' },
   { path: '/pagamentos', label: 'Pagar', icon: 'money' },
   { path: '/stats', label: 'Stats', icon: 'stats' },
@@ -11,6 +12,7 @@ const tabs = [
 const titles = {
   '/': 'Próximas aulas',
   '/agenda': 'Agenda',
+  '/historico': 'Histórico',
   '/alunos': 'Alunos',
   '/pagamentos': 'Pagamentos',
   '/stats': 'Estatísticas',

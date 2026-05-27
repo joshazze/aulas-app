@@ -90,7 +90,7 @@ a { color: var(--accent); text-decoration: none; }
   background: var(--surface);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   z-index: 10;
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -100,11 +100,18 @@ a { color: var(--accent); text-decoration: none; }
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 10px 4px 12px;
+  padding: 10px 2px 12px;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   border-top: 2px solid transparent;
+}
+
+.bottomnav a span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bottomnav a.active {
@@ -298,6 +305,25 @@ a { color: var(--accent); text-decoration: none; }
   text-transform: capitalize;
 }
 .day-head .day-meta { font-size: 12px; color: var(--text-2); }
+
+.day-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: capitalize;
+  padding: 0 4px;
+  margin: 6px 0 4px;
+}
+
+.filter-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+  max-width: 60%;
+}
 
 .lesson {
   display: flex;

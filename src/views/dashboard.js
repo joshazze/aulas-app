@@ -5,11 +5,22 @@ import { lessonRow } from './schedule.js';
 import { navigate, rerender } from '../lib/router.js';
 import { buildSummary } from '../lib/whatsapp.js';
 import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
+import {
+  getSelectionMode,
+  enterSelection,
+  exitSelection,
+  getSelectedIds,
+  pruneSelection,
+  selectionBar,
+} from '../lib/selection.js';
 
 export async function renderDashboard() {
   const root = h('div');
   const { data } = getState();
   const studentMap = Object.fromEntries(data.students.map(s => [s.id, s]));
+  const selectionMode = getSelectionMode();
+
+  pruneSelection(data.lessons);
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -45,33 +56,48 @@ export async function renderDashboard() {
     ),
   ));
 
-  root.appendChild(h('button', {
-    class: 'btn btn-block',
-    style: { marginBottom: '10px', justifyContent: 'flex-start' },
-    onClick: (e) => copyWithFeedback(buildSummary(data), e.currentTarget),
-  }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
-
-  const pendingCalendar = data.lessons.filter((l) =>
-    !l.addedToCalendar &&
-    l.status === 'scheduled' &&
-    new Date(l.startISO).getTime() > Date.now()
-  );
-  const hasPending = pendingCalendar.length > 0;
-  root.appendChild(h('button', {
-    class: 'btn btn-block',
-    style: { marginBottom: '18px', justifyContent: 'flex-start' },
-    disabled: !hasPending,
-    onClick: hasPending ? async () => {
-      const ics = buildICS(pendingCalendar, studentMap);
-      downloadICS(icsFilename('aulas-novas'), ics);
-      await markCalendarAdded(pendingCalendar.map((l) => l.id));
-      rerender();
-    } : null,
-  }, icon('calendar'),
-    hasPending
-      ? `Sincronizar calendário (${pendingCalendar.length})`
-      : 'Calendário sincronizado ✓',
+  // Toolbar: Selecionar/Cancelar
+  root.appendChild(h('div', { class: 'section-head', style: { marginBottom: '10px' } },
+    h('div'),
+    h('button', {
+      class: 'btn btn-sm' + (selectionMode ? ' btn-danger' : ''),
+      onClick: () => {
+        if (selectionMode) exitSelection();
+        else enterSelection();
+        rerender();
+      },
+    }, selectionMode ? 'Cancelar' : 'Selecionar'),
   ));
+
+  if (!selectionMode) {
+    root.appendChild(h('button', {
+      class: 'btn btn-block',
+      style: { marginBottom: '10px', justifyContent: 'flex-start' },
+      onClick: (e) => copyWithFeedback(buildSummary(data), e.currentTarget),
+    }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
+
+    const pendingCalendar = data.lessons.filter((l) =>
+      !l.addedToCalendar &&
+      l.status === 'scheduled' &&
+      new Date(l.startISO).getTime() > Date.now()
+    );
+    const hasPending = pendingCalendar.length > 0;
+    root.appendChild(h('button', {
+      class: 'btn btn-block',
+      style: { marginBottom: '18px', justifyContent: 'flex-start' },
+      disabled: !hasPending,
+      onClick: hasPending ? async () => {
+        const ics = buildICS(pendingCalendar, studentMap);
+        downloadICS(icsFilename('aulas-novas'), ics);
+        await markCalendarAdded(pendingCalendar.map((l) => l.id));
+        rerender();
+      } : null,
+    }, icon('calendar'),
+      hasPending
+        ? `Sincronizar calendário (${pendingCalendar.length})`
+        : 'Calendário sincronizado ✓',
+    ));
+  }
 
   if (upcoming.length === 0) {
     root.appendChild(emptyState(
@@ -100,16 +126,22 @@ export async function renderDashboard() {
       h('span', { class: 'day-meta' }, `${lessons.length} · ${fmtMoney(total)}`),
     ));
     for (const l of lessons) {
-      root.appendChild(lessonRow(l, studentMap[l.studentId]));
+      root.appendChild(lessonRow(l, studentMap[l.studentId], { selectable: selectionMode }));
     }
   }
 
-  // Floating add button
-  root.appendChild(h('button', {
-    class: 'btn btn-primary',
-    style: { position: 'fixed', right: '20px', bottom: '80px', borderRadius: '999px', padding: '14px 18px', boxShadow: '0 4px 14px rgba(94,234,212,0.3)', zIndex: '5' },
-    onClick: () => navigate('/agenda'),
-  }, icon('plus'), 'Aula'));
+  if (selectionMode && getSelectedIds().size > 0) {
+    root.appendChild(selectionBar(studentMap));
+  }
+
+  // Floating add button (hide in selection mode to avoid clashing with selection bar)
+  if (!selectionMode) {
+    root.appendChild(h('button', {
+      class: 'btn btn-primary',
+      style: { position: 'fixed', right: '20px', bottom: '80px', borderRadius: '999px', padding: '14px 18px', boxShadow: '0 4px 14px rgba(94,234,212,0.3)', zIndex: '5' },
+      onClick: () => navigate('/agenda'),
+    }, icon('plus'), 'Aula'));
+  }
 
   return root;
 }
