@@ -167,32 +167,23 @@ export async function renderSchedule() {
   }
   root.appendChild(grid);
 
-  // List of lessons in this month, sorted: upcoming asc, then past desc.
-  // In selection mode, hide past/non-scheduled — only futuras agendadas aparecem.
+  // List below the grid: all future scheduled lessons (independente do mês visualizado).
   const nowMs = Date.now();
-  const monthLessons = data.lessons
-    .filter(l => {
-      const d = new Date(l.startISO);
-      if (d < monthStart || d > monthEnd) return false;
+  const futureLessons = data.lessons
+    .filter((l) => {
+      const t = new Date(l.startISO).getTime();
+      if (t < nowMs) return false;
       if (selectionMode && !isUpcomingScheduled(l)) return false;
       return true;
     })
-    .sort((a, b) => {
-      const aT = new Date(a.startISO).getTime();
-      const bT = new Date(b.startISO).getTime();
-      const aPast = aT < nowMs;
-      const bPast = bT < nowMs;
-      if (aPast !== bPast) return aPast ? 1 : -1;
-      if (aPast) return bT - aT;
-      return aT - bT;
-    });
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
 
   root.appendChild(h('div', { class: 'cal-list' }));
-  if (monthLessons.length === 0) {
-    root.appendChild(emptyState('Nada marcado neste mês', 'Toque em um dia ou no botão Aula pra adicionar.'));
+  if (futureLessons.length === 0) {
+    root.appendChild(emptyState('Sem aulas futuras', 'Toque em um dia ou no botão Aula pra adicionar.'));
   } else {
     let lastDay = '';
-    for (const l of monthLessons) {
+    for (const l of futureLessons) {
       const s = studentMap[l.studentId];
       const k = dayKey(l.startISO);
       if (k !== lastDay) {
