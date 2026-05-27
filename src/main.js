@@ -8,6 +8,7 @@ import { renderMigrate } from './views/migrate.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderStudents } from './views/students.js';
 import { renderSchedule } from './views/schedule.js';
+import { renderHistory } from './views/history.js';
 import { renderPayments } from './views/payments.js';
 import { renderStats } from './views/stats.js';
 
@@ -25,6 +26,7 @@ defineRoute('/migrate', () => renderMigrate());
 defineRoute('/', async () => shell(await renderDashboard()));
 defineRoute('/alunos', async () => shell(await renderStudents()));
 defineRoute('/agenda', async () => shell(await renderSchedule()));
+defineRoute('/historico', async () => shell(await renderHistory()));
 defineRoute('/pagamentos', async () => shell(await renderPayments()));
 defineRoute('/stats', async () => shell(await renderStats()));
 

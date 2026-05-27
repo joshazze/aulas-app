@@ -5,35 +5,19 @@ import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, from
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
 import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
+import {
+  getSelectionMode,
+  enterSelection,
+  exitSelection,
+  getSelectedIds,
+  getSelectedStudentId,
+  toggleSelection,
+  isUpcomingScheduled,
+  pruneSelection,
+  selectionBar,
+} from '../lib/selection.js';
 
 let viewMonth = startOfMonth(new Date());
-
-// Selection mode state (only used by the agenda view)
-let selectionMode = false;
-let selectedIds = new Set();
-let selectedStudentId = null;
-
-function exitSelection() {
-  selectionMode = false;
-  selectedIds = new Set();
-  selectedStudentId = null;
-}
-
-function isUpcomingScheduled(l) {
-  return l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now();
-}
-
-function toggleSelection(l) {
-  if (selectedIds.has(l.id)) {
-    selectedIds.delete(l.id);
-    if (selectedIds.size === 0) selectedStudentId = null;
-    return;
-  }
-  if (selectedStudentId && l.studentId !== selectedStudentId) return;
-  if (!isUpcomingScheduled(l)) return;
-  selectedStudentId = l.studentId;
-  selectedIds.add(l.id);
-}
 
 async function lessonDialog(existing, defaultDate) {
   const { data } = getState();
@@ -104,12 +88,9 @@ export async function renderSchedule() {
   const root = h('div');
   const { data } = getState();
   const studentMap = Object.fromEntries(data.students.map(s => [s.id, s]));
+  const selectionMode = getSelectionMode();
 
-  if (selectionMode) {
-    const allIds = new Set(data.lessons.map((l) => l.id));
-    selectedIds = new Set([...selectedIds].filter((id) => allIds.has(id)));
-    if (selectedIds.size === 0) selectedStudentId = null;
-  }
+  pruneSelection(data.lessons);
 
   // Navigation
   const nav = h('div', { class: 'cal-nav' },
@@ -126,7 +107,7 @@ export async function renderSchedule() {
         class: 'btn btn-sm' + (selectionMode ? ' btn-danger' : ''),
         onClick: () => {
           if (selectionMode) exitSelection();
-          else selectionMode = true;
+          else enterSelection();
           rerender();
         },
       }, selectionMode ? 'Cancelar' : 'Selecionar'),
@@ -224,52 +205,19 @@ export async function renderSchedule() {
     }
   }
 
-  if (selectionMode && selectedIds.size > 0) {
+  if (selectionMode && getSelectedIds().size > 0) {
     root.appendChild(selectionBar(studentMap));
   }
 
   return root;
 }
 
-function selectionBar(studentMap) {
-  const lessons = data().lessons.filter(l => selectedIds.has(l.id))
-    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
-  const student = studentMap[selectedStudentId];
-  const count = lessons.length;
-  return h('div', { class: 'selection-bar' },
-    h('div', { class: 'sb-info' },
-      h('strong', null, String(count)),
-      ' ',
-      count === 1 ? 'aula de ' : 'aulas de ',
-      h('strong', null, student?.name || '—'),
-    ),
-    h('button', {
-      class: 'btn btn-sm btn-primary',
-      onClick: (e) => copyWithFeedback(buildConfirmation(lessons, student), e.currentTarget),
-    }, icon('copy'), 'Copiar'),
-    h('button', {
-      class: 'btn btn-sm',
-      onClick: async () => {
-        const ics = buildICS(lessons, studentMap);
-        downloadICS(icsFilename('aulas-' + (student?.name || 'aluno')), ics);
-        await markCalendarAdded(lessons.map((l) => l.id));
-        rerender();
-      },
-    }, icon('calendar'), 'Calendário'),
-    h('button', {
-      class: 'btn btn-ghost btn-sm',
-      title: 'Sair da seleção',
-      onClick: () => { exitSelection(); rerender(); },
-    }, icon('x')),
-  );
-}
-
-function data() { return getState().data; }
-
 export function lessonRow(l, s, opts = {}) {
   const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
   const isUpcoming = isUpcomingScheduled(l);
   const selectable = opts.selectable;
+  const selectedIds = getSelectedIds();
+  const selectedStudentId = getSelectedStudentId();
   const selected = selectable && selectedIds.has(l.id);
   const eligible = isUpcoming && (!selectedStudentId || l.studentId === selectedStudentId || selected);
   const disabled = selectable && !eligible;
@@ -296,11 +244,6 @@ export function lessonRow(l, s, opts = {}) {
         title: 'Copiar confirmação p/ WhatsApp',
         onClick: (e) => copyWithFeedback(buildConfirmation(l, s), e.currentTarget),
       }, icon('copy')),
-      l.status === 'scheduled' && h('button', {
-        class: 'btn btn-ghost btn-sm',
-        title: 'Marcar como dada',
-        onClick: async () => { await setLessonStatus(l.id, 'completed'); rerender(); },
-      }, icon('check')),
       l.status === 'completed' && h('button', {
         class: 'btn btn-ghost btn-sm',
         title: 'Reabrir',

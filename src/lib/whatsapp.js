@@ -1,54 +1,43 @@
 import { fmtCompactDateTime, fmtDuration, firstName } from './format.js';
 
-function isPast(iso) {
-  return new Date(iso).getTime() < Date.now();
+function lastCycleStart(now) {
+  const day = now.getDate();
+  if (day >= 15) {
+    return new Date(now.getFullYear(), now.getMonth(), 15, 0, 0, 0, 0);
+  }
+  return new Date(now.getFullYear(), now.getMonth() - 1, 15, 0, 0, 0, 0);
+}
+
+function fmtDM(d) {
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function buildSummary(data) {
   const studentMap = Object.fromEntries(data.students.map((s) => [s.id, s]));
-  const now = Date.now();
-  const weekAgoMs = now - 7 * 86400000;
-  const twoWeeksAheadMs = now + 14 * 86400000;
+  const now = new Date();
+  const cycleStart = lastCycleStart(now);
+  const cycleStartMs = cycleStart.getTime();
+  const nowMs = now.getTime();
 
   const completed = data.lessons
     .filter((l) => {
-      const t = new Date(l.startISO).getTime();
-      return (l.status === 'completed' || (l.status === 'scheduled' && t < now))
-        && t >= weekAgoMs;
-    })
-    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
-
-  const upcoming = data.lessons
-    .filter((l) => {
       if (l.status === 'cancelled') return false;
       const t = new Date(l.startISO).getTime();
-      return t >= now && t <= twoWeeksAheadMs;
+      return t >= cycleStartMs && t <= nowMs;
     })
     .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
 
-  const lines = ['📚 *Resumo de aulas*', ''];
+  const header = `📚 *Aulas dadas* _(${fmtDM(cycleStart)} a ${fmtDM(now)})_`;
 
-  if (completed.length > 0) {
-    lines.push('✅ *Já dadas* _(últimos 7 dias)_');
-    for (const l of completed) {
-      const s = studentMap[l.studentId];
-      lines.push(`• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${fmtDuration(l.durationMinutes)})`);
-    }
-    lines.push('');
+  if (completed.length === 0) {
+    return [header, '', `_Nenhuma aula dada desde ${fmtDM(cycleStart)}._`].join('\n');
   }
 
-  if (upcoming.length > 0) {
-    lines.push('📅 *Próximas* _(até 14 dias)_');
-    for (const l of upcoming) {
-      const s = studentMap[l.studentId];
-      lines.push(`• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${fmtDuration(l.durationMinutes)})`);
-    }
+  const lines = [header, ''];
+  for (const l of completed) {
+    const s = studentMap[l.studentId];
+    lines.push(`• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${fmtDuration(l.durationMinutes)})`);
   }
-
-  if (completed.length === 0 && upcoming.length === 0) {
-    lines.push('_Nada nas últimas semanas nem nos próximos dias._');
-  }
-
   return lines.join('\n').trim();
 }
 
