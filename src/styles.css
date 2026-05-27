@@ -171,6 +171,34 @@ a { color: var(--accent); text-decoration: none; }
   letter-spacing: 0.04em;
 }
 
+.pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  flex: 1 1 0;
+  min-width: 70px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.pill:hover { color: var(--text); }
+
+.pill.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .field input, .field select, .field textarea {
   background: var(--bg);
   border: 1px solid var(--border);
