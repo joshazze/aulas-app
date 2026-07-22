@@ -29,6 +29,18 @@ async function studentDialog(existing) {
     colorPicker.appendChild(swatch);
   });
 
+  const ratesBox = h('div', { class: 'row', style: { flexDirection: 'column', gap: '6px', alignItems: 'stretch' } });
+  const addRateRow = (rate) => {
+    const row = h('div', { class: 'row', style: { gap: '6px' } });
+    row.append(
+      h('input', { name: 'extraLabel', placeholder: 'Ex: Promo', value: rate?.label || '', style: { flex: '1' } }),
+      h('input', { name: 'extraRate', type: 'number', step: '0.01', min: '0.01', placeholder: 'R$/h', value: rate?.hourlyRate ?? '', style: { width: '90px' } }),
+      h('button', { type: 'button', class: 'btn btn-ghost btn-sm', title: 'Remover valor', onClick: () => row.remove() }, icon('x')),
+    );
+    ratesBox.appendChild(row);
+  };
+  (existing?.extraRates || []).forEach(addRateRow);
+
   form.append(
     h('div', { class: 'field' },
       h('label', null, 'Nome'),
@@ -37,6 +49,11 @@ async function studentDialog(existing) {
     h('div', { class: 'field' },
       h('label', null, 'Valor por hora (R$)'),
       h('input', { name: 'hourlyRate', type: 'number', step: '0.01', min: '0', required: true, value: existing?.hourlyRate ?? '' }),
+    ),
+    h('div', { class: 'field' },
+      h('label', null, 'Valores extras'),
+      ratesBox,
+      h('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: { marginTop: '6px' }, onClick: () => addRateRow() }, icon('plus'), 'Valor extra'),
     ),
     h('div', { class: 'field' },
       h('label', null, 'Cor'),
@@ -55,11 +72,16 @@ async function studentDialog(existing) {
       { label: 'Cancelar', variant: 'btn-ghost', value: null },
       { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
         if (!form.reportValidity()) return false;
+        const extraRates = [...ratesBox.children].map((row) => {
+          const [labelInput, rateInput] = row.querySelectorAll('input');
+          return { label: labelInput.value.trim(), hourlyRate: Number(rateInput.value) };
+        }).filter((r) => r.label && r.hourlyRate > 0);
         const data = {
           name: form.name.value,
           hourlyRate: form.hourlyRate.value,
           color: selectedColor,
           notes: form.notes.value,
+          extraRates,
         };
         close(data);
       } },
