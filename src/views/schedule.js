@@ -62,14 +62,15 @@ async function lessonDialog(existing, defaultDate) {
     title: existing ? 'Editar aula' : 'Nova aula',
     body: form,
     actions: [
-      existing && h('button', {
-        type: 'button',
-        class: 'btn btn-danger btn-sm',
+      existing && {
+        label: 'Apagar',
+        variant: 'btn-danger btn-sm',
+        close: false,
         onClick: async (_, close) => {
           const ok = await confirm('Apagar esta aula?');
           if (ok) { await deleteLesson(existing.id); close({ deleted: true }); }
         },
-      }, 'Apagar'),
+      },
       { label: 'Cancelar', variant: 'btn-ghost', value: null },
       { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
         if (!form.reportValidity()) return false;
@@ -245,7 +246,7 @@ export function lessonRow(l, s, opts = {}) {
         title: 'Editar aula',
         onClick: async () => {
           const r = await editLesson(l);
-          if (r === 'deleted') return rerender();
+          if (r === 'deleted' || r === 'synced') return rerender();
           if (r) { await updateLesson(l.id, r); rerender(); }
         },
       }, icon('edit')),
@@ -286,38 +287,46 @@ async function editLesson(l) {
       h('textarea', { name: 'notes', rows: 2 }, l.notes || ''),
     ),
   );
+  const readForm = () => ({
+    studentId: form.studentId.value,
+    startISO: fromDateTimeLocal(form.start.value),
+    durationMinutes: form.duration.value,
+    status: form.status.value,
+    notes: form.notes.value,
+  });
   return openModal({
     title: 'Editar aula',
     body: form,
     actions: [
-      h('button', {
-        type: 'button',
-        class: 'btn btn-sm',
-        title: 'Baixar arquivo .ics pro calendário do iPhone/Android',
-        onClick: async () => {
-          const ics = buildICS([l], { [l.studentId]: s });
-          downloadICS(icsFilename('aula-' + (s?.name || 'aluno')), ics);
-          await markCalendarAdded([l.id]);
+      {
+        label: [icon('calendar'), 'Calendário'],
+        variant: 'btn-sm',
+        close: false,
+        onClick: async (_, close) => {
+          if (!form.reportValidity()) return;
+          await updateLesson(l.id, readForm());
+          const { data } = getState();
+          const saved = data.lessons.find((x) => x.id === l.id);
+          const student = data.students.find((x) => x.id === saved.studentId);
+          const ics = buildICS([saved], { [saved.studentId]: student });
+          downloadICS(icsFilename('aula-' + (student?.name || 'aluno')), ics);
+          await markCalendarAdded([saved.id]);
+          close('synced');
         },
-      }, icon('calendar'), 'Calendário'),
-      h('button', {
-        type: 'button',
-        class: 'btn btn-danger btn-sm',
+      },
+      {
+        label: 'Apagar',
+        variant: 'btn-danger btn-sm',
+        close: false,
         onClick: async (_, close) => {
           const ok = await confirm('Apagar esta aula?');
           if (ok) { await deleteLesson(l.id); close('deleted'); }
         },
-      }, 'Apagar'),
+      },
       { label: 'Cancelar', variant: 'btn-ghost', value: null },
       { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
         if (!form.reportValidity()) return false;
-        close({
-          studentId: form.studentId.value,
-          startISO: fromDateTimeLocal(form.start.value),
-          durationMinutes: form.duration.value,
-          status: form.status.value,
-          notes: form.notes.value,
-        });
+        close(readForm());
       } },
     ],
   });
