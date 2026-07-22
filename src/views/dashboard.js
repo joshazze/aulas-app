@@ -2,6 +2,7 @@ import { h, icon, emptyState, copyToClipboard } from '../components/ui.js';
 import { openModal } from '../components/modal.js';
 import { getState, markCalendarAdded, wasEverSynced } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 import { lessonRow } from './schedule.js';
 import { navigate, rerender } from '../lib/router.js';
 import { buildSummary } from '../lib/whatsapp.js';
@@ -119,7 +120,7 @@ export async function renderDashboard() {
     const d = new Date(l.startISO);
     return d <= new Date(todayStart.getTime() + 7 * 86400000);
   });
-  const next7Value = next7.reduce((sum, l) => sum + (l.durationMinutes / 60) * (studentMap[l.studentId]?.hourlyRate || 0), 0);
+  const next7Value = next7.reduce((sum, l) => sum + lessonValue(l, studentMap[l.studentId]), 0);
 
   root.appendChild(h('div', { class: 'stat-grid', style: { gridTemplateColumns: 'repeat(2, 1fr)' } },
     h('div', { class: 'stat' },
@@ -221,7 +222,7 @@ export async function renderDashboard() {
   }
 
   for (const [k, lessons] of groups) {
-    const total = lessons.reduce((sum, l) => sum + (l.durationMinutes / 60) * (studentMap[l.studentId]?.hourlyRate || 0), 0);
+    const total = lessons.reduce((sum, l) => sum + lessonValue(l, studentMap[l.studentId]), 0);
     root.appendChild(h('div', { class: 'day-head' },
       h('span', { class: 'day-name' }, fmtDateRelative(lessons[0].startISO)),
       h('span', { class: 'day-meta' }, `${lessons.length} · ${fmtMoney(total)}`),

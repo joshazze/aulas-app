@@ -2,6 +2,7 @@ import { h, icon, emptyState } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addPayment, deletePayment } from '../lib/state.js';
 import { fmtMoney, fmtDateLong } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 import { rerender } from '../lib/router.js';
 
 function lessonsValueByStudent(data) {
@@ -10,7 +11,7 @@ function lessonsValueByStudent(data) {
     if (l.status !== 'completed') continue;
     const s = data.students.find(s => s.id === l.studentId);
     if (!s) continue;
-    const v = (l.durationMinutes / 60) * s.hourlyRate;
+    const v = lessonValue(l, s);
     map.set(l.studentId, (map.get(l.studentId) || 0) + v);
   }
   return map;

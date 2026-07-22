@@ -1,4 +1,5 @@
 import { fmtCompactDateTime, fmtDuration, firstName } from './format.js';
+import { lessonValue } from './pricing.js';
 
 function lastCycleStart(now) {
   const day = now.getDate();
@@ -16,15 +17,10 @@ function fmtBRL(n) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function lessonValue(l, studentMap) {
-  const s = studentMap[l.studentId];
-  return (l.durationMinutes / 60) * (s?.hourlyRate || 0);
-}
-
 function lessonLine(l, studentMap, showValues) {
   const s = studentMap[l.studentId];
   const meta = [fmtDuration(l.durationMinutes)];
-  if (showValues) meta.push(fmtBRL(lessonValue(l, studentMap)));
+  if (showValues) meta.push(fmtBRL(lessonValue(l, s)));
   return `• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${meta.join(' · ')})`;
 }
 
@@ -58,7 +54,7 @@ export function buildSummary(data, opts = {}) {
     } else {
       const lines = [header, ...past.map((l) => lessonLine(l, studentMap, showValues))];
       if (showValues) {
-        const total = past.reduce((sum, l) => sum + lessonValue(l, studentMap), 0);
+        const total = past.reduce((sum, l) => sum + lessonValue(l, studentMap[l.studentId]), 0);
         lines.push(`*Total: ${fmtBRL(total)}*`);
       }
       sections.push(lines.join('\n'));
@@ -72,7 +68,7 @@ export function buildSummary(data, opts = {}) {
     } else {
       const lines = [header, ...future.map((l) => lessonLine(l, studentMap, showValues))];
       if (showValues) {
-        const total = future.reduce((sum, l) => sum + lessonValue(l, studentMap), 0);
+        const total = future.reduce((sum, l) => sum + lessonValue(l, studentMap[l.studentId]), 0);
         lines.push(`*Total: ${fmtBRL(total)}*`);
       }
       sections.push(lines.join('\n'));

@@ -2,6 +2,7 @@ import { h } from '../components/ui.js';
 import { getState, wipeAllData, setSession } from '../lib/state.js';
 import { exportData, importData } from '../lib/storage.js';
 import { fmtMoney, fmtMonthShort } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 
 export async function renderStats() {
   const root = h('div');
@@ -24,7 +25,7 @@ export async function renderStats() {
   for (const l of data.lessons) {
     const s = studentMap[l.studentId];
     if (!s) continue;
-    const value = (l.durationMinutes / 60) * s.hourlyRate;
+    const value = lessonValue(l, s);
     const d = new Date(l.startISO);
     if (l.status === 'completed') {
       totalEarned += value;

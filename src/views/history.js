@@ -1,6 +1,7 @@
 import { h, emptyState } from '../components/ui.js';
 import { getState } from '../lib/state.js';
 import { fmtMoney, fmtMonthYear, fmtDateRelative, dayKey } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 import { lessonRow } from './schedule.js';
 import { rerender } from '../lib/router.js';
 
@@ -56,7 +57,7 @@ export async function renderHistory() {
   for (const { date, lessons } of groups.values()) {
     const total = lessons.reduce((sum, l) => {
       const s = studentMap[l.studentId];
-      return sum + (l.durationMinutes / 60) * (s?.hourlyRate || 0);
+      return sum + lessonValue(l, s);
     }, 0);
     root.appendChild(h('div', { class: 'day-head', style: { marginTop: '14px' } },
       h('span', { class: 'day-name' }, capitalize(fmtMonthYear(date))),

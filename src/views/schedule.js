@@ -2,6 +2,7 @@ import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus, markCalendarAdded } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
 import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
@@ -205,7 +206,7 @@ export async function renderSchedule() {
 }
 
 export function lessonRow(l, s, opts = {}) {
-  const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
+  const valor = lessonValue(l, s);
   const isUpcoming = isUpcomingScheduled(l);
   const selectable = opts.selectable;
   const selectedIds = getSelectedIds();
