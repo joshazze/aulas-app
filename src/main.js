@@ -11,6 +11,7 @@ import { renderSchedule } from './views/schedule.js';
 import { renderHistory } from './views/history.js';
 import { renderPayments } from './views/payments.js';
 import { renderStats } from './views/stats.js';
+import { exitSelection } from './lib/selection.js';
 
 const app = document.getElementById('app');
 
@@ -35,7 +36,11 @@ setNotFound(async () => shell(h('div', { class: 'empty' },
   h('a', { href: '#/' }, 'Voltar pro início'),
 )));
 
+let lastPath = null;
 setBeforeEach(async (path) => {
+  // Modo seleção é por tela; trocar de aba não pode levar a seleção junto.
+  if (lastPath !== null && path !== lastPath) exitSelection();
+  lastPath = path;
   if (legacyEncryptedDataExists()) {
     if (path !== '/migrate') {
       navigate('/migrate');

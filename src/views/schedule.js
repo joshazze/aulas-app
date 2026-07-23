@@ -1,4 +1,4 @@
-import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
+import { h, icon, emptyState, copyWithFeedback, showToast } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus, markCalendarAdded } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
@@ -71,6 +71,10 @@ function rateField(students, initialStudentId, existingHourlyRate) {
   };
 }
 
+// Último aluno usado ao criar aula: marcar série da mesma aluna não deve
+// exigir re-selecionar a cada diálogo.
+let lastStudentId = null;
+
 async function lessonDialog(existing, defaultDate) {
   const { data } = getState();
   const students = data.students.filter(s => !s.archived);
@@ -83,8 +87,22 @@ async function lessonDialog(existing, defaultDate) {
     return null;
   }
 
+  const preselectedId = existing?.studentId
+    || (students.some((s) => s.id === lastStudentId) ? lastStudentId : students[0].id);
   const form = h('form');
-  const rate = rateField(students, existing?.studentId || students[0].id, existing?.hourlyRate);
+  const rate = rateField(students, preselectedId, existing?.hourlyRate);
+
+  const repeatCount = h('input', {
+    name: 'repeatCount', type: 'number', min: '2', max: '26', value: 4,
+    style: { display: 'none', marginTop: '6px' },
+  });
+  const repeatSelect = h('select', { name: 'repeat', onChange: () => {
+    repeatCount.style.display = repeatSelect.value === 'weekly' ? '' : 'none';
+  } },
+    h('option', { value: 'none' }, 'Não repete'),
+    h('option', { value: 'weekly' }, 'Toda semana (mesmo dia e hora)'),
+  );
+
   form.append(
     h('div', { class: 'field' },
       h('label', null, 'Aluno'),
@@ -93,7 +111,7 @@ async function lessonDialog(existing, defaultDate) {
         required: true,
         onChange: (e) => rate.refresh(e.target.value),
       },
-        ...students.map(s => h('option', { value: s.id, selected: existing?.studentId === s.id }, s.name)),
+        ...students.map(s => h('option', { value: s.id, selected: preselectedId === s.id }, s.name)),
       ),
     ),
     h('div', { class: 'field' },
@@ -110,6 +128,11 @@ async function lessonDialog(existing, defaultDate) {
       h('input', { name: 'duration', type: 'number', step: '15', min: '15', required: true, value: existing?.durationMinutes ?? 60 }),
     ),
     rate.el,
+    !existing && h('div', { class: 'field' },
+      h('label', null, 'Repetir'),
+      repeatSelect,
+      repeatCount,
+    ),
     h('div', { class: 'field' },
       h('label', null, 'Notas'),
       h('textarea', { name: 'notes', rows: 2 }, existing?.notes || ''),
@@ -138,10 +161,33 @@ async function lessonDialog(existing, defaultDate) {
           durationMinutes: form.duration.value,
           hourlyRate: rate.getValue(),
           notes: form.notes.value,
+          repeatCount: !existing && repeatSelect.value === 'weekly'
+            ? Math.min(26, Math.max(2, Number(repeatCount.value) || 2))
+            : 1,
         });
       } },
     ].filter(Boolean),
   });
+}
+
+// Fluxo completo de criação (diálogo + addLesson, com repetição semanal).
+// Usado pela Agenda e pelo FAB do Home. Retorna quantas aulas criou.
+export async function openNewLessonDialog(defaultDate) {
+  const r = await lessonDialog(null, defaultDate);
+  if (!r || r.deleted) return 0;
+  lastStudentId = r.studentId;
+  const { repeatCount, ...lesson } = r;
+  const start = new Date(lesson.startISO);
+  for (let i = 0; i < repeatCount; i++) {
+    await addLesson({
+      ...lesson,
+      startISO: new Date(start.getTime() + i * 7 * 86400000).toISOString(),
+    });
+  }
+  if (repeatCount > 1) {
+    showToast(`${repeatCount} aulas marcadas (semanais até ${fmtDateRelative(new Date(start.getTime() + (repeatCount - 1) * 7 * 86400000).toISOString())}).`);
+  }
+  return repeatCount;
 }
 
 export async function renderSchedule() {
@@ -174,8 +220,7 @@ export async function renderSchedule() {
       h('button', {
         class: 'btn btn-primary btn-sm',
         onClick: async () => {
-          const r = await lessonDialog(null, new Date());
-          if (r && !r.deleted) { await addLesson(r); rerender(); }
+          if (await openNewLessonDialog(new Date())) rerender();
         },
       }, icon('plus'), 'Aula'),
     ),
@@ -210,8 +255,7 @@ export async function renderSchedule() {
       onClick: async () => {
         const dt = new Date(d);
         dt.setHours(14, 0, 0, 0);
-        const r = await lessonDialog(null, dt);
-        if (r && !r.deleted) { await addLesson(r); rerender(); }
+        if (await openNewLessonDialog(dt)) rerender();
       },
     },
       h('div', { class: 'num' }, d.getDate()),
@@ -285,11 +329,11 @@ export function lessonRow(l, s, opts = {}) {
         fmtTime(l.startISO),
         ' · ',
         (l.durationMinutes / 60).toString().replace('.', ',') + 'h',
-        l.hourlyRate != null ? ' · ' + fmtMoney(l.hourlyRate) + '/h' : '',
+        l.hourlyRate != null && l.hourlyRate !== (s?.hourlyRate ?? null) ? ' · ' + fmtMoney(l.hourlyRate) + '/h' : '',
         l.notes ? ' · ' + l.notes : '',
       ),
     ),
-    h('div', { class: 'price', title: l.hourlyRate != null ? 'Valor personalizado' : null }, fmtMoney(valor)),
+    h('div', { class: 'price', title: l.hourlyRate != null && l.hourlyRate !== (s?.hourlyRate ?? null) ? 'Valor personalizado' : null }, fmtMoney(valor)),
     !selectable && h('div', { class: 'lesson-actions' },
       isUpcoming && h('button', {
         class: 'btn btn-ghost btn-sm',
@@ -378,6 +422,7 @@ async function editLesson(l) {
           const ics = buildICS([saved], { [saved.studentId]: student });
           downloadICS(icsFilename('aula-' + (student?.name || 'aluno')), ics);
           await markCalendarAdded([saved.id]);
+          showToast('Arquivo .ics baixado. Abre ele pra adicionar/atualizar o evento no Calendário.', { duration: 6000 });
           close('synced');
         },
       },

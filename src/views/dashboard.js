@@ -1,10 +1,11 @@
-import { h, icon, emptyState, copyToClipboard } from '../components/ui.js';
+import { h, icon, emptyState, copyToClipboard, showToast } from '../components/ui.js';
 import { openModal } from '../components/modal.js';
 import { getState, markCalendarAdded, wasEverSynced } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
 import { lessonValue } from '../lib/pricing.js';
-import { lessonRow } from './schedule.js';
-import { navigate, rerender } from '../lib/router.js';
+import { lessonRow, openNewLessonDialog } from './schedule.js';
+import { backupIsStale } from './stats.js';
+import { rerender } from '../lib/router.js';
 import { buildSummary } from '../lib/whatsapp.js';
 import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
 import {
@@ -110,6 +111,7 @@ export async function renderDashboard() {
 
   const todayLessons = data.lessons
     .filter(l => {
+      if (l.status === 'cancelled') return false;
       const d = new Date(l.startISO);
       const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
       return sameDay;
@@ -192,6 +194,7 @@ export async function renderDashboard() {
         const ics = buildICS([...pendingLessons, ...pendingTombstones], studentMap);
         downloadICS(icsFilename('aulas-novas'), ics);
         await markCalendarAdded(pendingLessons.map((l) => l.id), pendingTombstones.map((t) => t.id));
+        showToast('Arquivo .ics baixado. Abre ele pra adicionar os eventos no Calendário (sempre no mesmo calendário).', { duration: 6000 });
         rerender();
       } : null,
     }, icon('calendar'),
@@ -199,6 +202,13 @@ export async function renderDashboard() {
         ? `Sincronizar calendário (${pendingCount})`
         : 'Calendário sincronizado ✓',
     ));
+
+    if (backupIsStale(data)) {
+      root.appendChild(h('p', { class: 'small', style: { margin: '0 4px 14px', color: 'var(--warn)' } },
+        '⚠ Backup velho ou inexistente. Seus dados vivem só neste aparelho. ',
+        h('a', { href: '#/stats', style: { color: 'var(--warn)', textDecoration: 'underline' } }, 'Exportar agora'),
+      ));
+    }
   }
 
   if (upcoming.length === 0) {
@@ -241,7 +251,9 @@ export async function renderDashboard() {
     root.appendChild(h('button', {
       class: 'btn btn-primary',
       style: { position: 'fixed', right: '20px', bottom: '80px', borderRadius: '999px', padding: '14px 18px', boxShadow: '0 4px 14px rgba(94,234,212,0.3)', zIndex: '5' },
-      onClick: () => navigate('/agenda'),
+      onClick: async () => {
+        if (await openNewLessonDialog(new Date())) rerender();
+      },
     }, icon('plus'), 'Aula'));
   }
 
