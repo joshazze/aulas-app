@@ -98,3 +98,16 @@ export async function copyWithFeedback(text, btn, { ok = '✓ Copiado', fail = '
   }, 1500);
   return success;
 }
+
+let toastEl = null;
+let toastTimer = 0;
+export function showToast(message, { danger = false, duration = 3500 } = {}) {
+  if (!toastEl) {
+    toastEl = h('div', { class: 'toast' });
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = message;
+  toastEl.className = 'toast show' + (danger ? ' danger' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.classList.remove('show'); }, duration);
+}

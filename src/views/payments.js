@@ -1,4 +1,5 @@
-import { h, icon, emptyState } from '../components/ui.js';
+import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
+import { buildCharge } from '../lib/whatsapp.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addPayment, deletePayment } from '../lib/state.js';
 import { fmtMoney, fmtDateLong } from '../lib/format.js';
@@ -47,11 +48,16 @@ async function paymentDialog() {
   })();
 
   const balanceHint = h('div', { class: 'hint' }, '');
+  const amountInput = h('input', { name: 'amount', type: 'number', step: '0.01', min: '0.01', required: true });
+  let amountTouched = false;
+  amountInput.addEventListener('input', () => { amountTouched = true; });
   const select = h('select', { name: 'studentId', required: true,
     onChange: (e) => {
       const id = e.target.value;
       const owed = (earned.get(id) || 0) - (paid.get(id) || 0);
       balanceHint.textContent = owed > 0 ? `Deve: ${fmtMoney(owed)}` : owed < 0 ? `Adiantado: ${fmtMoney(-owed)}` : 'Em dia';
+      // Pré-preenche com o devido; se o Josh já digitou, não sobrescrever.
+      if (!amountTouched) amountInput.value = owed > 0 ? owed.toFixed(2) : '';
     },
   },
     ...students.map(s => h('option', { value: s.id }, s.name)),
@@ -65,7 +71,7 @@ async function paymentDialog() {
     ),
     h('div', { class: 'field' },
       h('label', null, 'Valor (R$)'),
-      h('input', { name: 'amount', type: 'number', step: '0.01', min: '0.01', required: true }),
+      amountInput,
     ),
     h('div', { class: 'field-row' },
       h('div', { class: 'field' },
@@ -144,6 +150,11 @@ export async function renderPayments() {
         h('div', { class: 'tabular small muted' }, fmtMoney(p) + ' / ' + fmtMoney(e)),
         h('div', { class: 'tabular', style: { width: '90px', textAlign: 'right', fontWeight: 600, color: owed > 0.005 ? 'var(--warn)' : owed < -0.005 ? 'var(--accent)' : 'var(--text-2)' } },
           owed > 0.005 ? fmtMoney(owed) : owed < -0.005 ? '+' + fmtMoney(-owed) : 'OK'),
+        owed > 0.005 && h('button', {
+          class: 'btn btn-ghost btn-sm',
+          title: 'Copiar cobrança p/ WhatsApp',
+          onClick: (e) => copyWithFeedback(buildCharge(s, owed), e.currentTarget),
+        }, icon('copy')),
       ));
     }
     root.appendChild(balCard);

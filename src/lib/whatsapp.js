@@ -103,3 +103,19 @@ export function buildConfirmation(lessonOrLessons, student) {
     `Combinado? 🤝`,
   ].join('\n');
 }
+
+export function buildCharge(student, owed, unpaidLessons = []) {
+  const nome = firstName(student?.name) || 'aluno';
+  const lines = [
+    `Oi ${nome}! Tudo bem?`,
+    '',
+    `Passando pra fechar nossas aulas: deu *${fmtBRL(owed)}* no total.`,
+  ];
+  if (unpaidLessons.length > 0) {
+    lines.push('', `São ${unpaidLessons.length} aula${unpaidLessons.length === 1 ? '' : 's'}:`);
+    const sorted = [...unpaidLessons].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+    lines.push(...sorted.map((l) => `📅 ${fmtCompactDateTime(l.startISO)} (${fmtDuration(l.durationMinutes)})`));
+  }
+  lines.push('', 'Pode fazer o PIX quando conseguir 🙂');
+  return lines.join('\n');
+}

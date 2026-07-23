@@ -1,7 +1,7 @@
 {
   "name": "Aulas — Agenda & ganhos",
   "short_name": "Aulas",
-  "description": "Agenda de aulas particulares e tracking de ganhos. Dados cifrados localmente.",
+  "description": "Agenda de aulas particulares e tracking de ganhos. Dados salvos localmente no aparelho.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -15,6 +15,15 @@ function readMeta() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+// Completa coleções faltantes em vez de descartar o objeto inteiro.
+function repairShape(data) {
+  for (const k of ['students', 'lessons', 'payments']) {
+    if (!Array.isArray(data[k])) data[k] = [];
+  }
+  if (!data.settings || typeof data.settings !== 'object') data.settings = { createdAt: null };
+  return data;
+}
+
 export function loadOrInit() {
   let meta = readMeta();
   if (!meta || meta.salt || meta.verifier) {
@@ -25,16 +34,17 @@ export function loadOrInit() {
   let data;
   if (!rawData) {
     data = { ...EMPTY_DATA, settings: { createdAt: meta.createdAt } };
-    localStorage.setItem(DATA_KEY, JSON.stringify(data));
+    try { localStorage.setItem(DATA_KEY, JSON.stringify(data)); } catch {}
   } else {
     try {
       data = JSON.parse(rawData);
-      if (!data || typeof data !== 'object' || !Array.isArray(data.students)) {
-        throw new Error('shape inválido');
-      }
+      if (!data || typeof data !== 'object') throw new Error('shape inválido');
+      repairShape(data);
     } catch {
+      // Nunca sobrescrever o blob corrompido: copiar pra chave de resgate antes.
+      try { localStorage.setItem(DATA_KEY + ':corrompido', rawData); } catch {}
       data = { ...EMPTY_DATA, settings: { createdAt: meta.createdAt } };
-      localStorage.setItem(DATA_KEY, JSON.stringify(data));
+      try { localStorage.setItem(DATA_KEY, JSON.stringify(data)); } catch {}
     }
   }
   return { data, meta };
@@ -57,8 +67,20 @@ export function exportData() {
 
 export function importData(json) {
   const parsed = JSON.parse(json);
-  if (!parsed || parsed.version !== 2 || !parsed.data || !Array.isArray(parsed.data.students)) {
+  if (!parsed || parsed.version !== 2 || !parsed.data || typeof parsed.data !== 'object' || !Array.isArray(parsed.data.students)) {
     throw new Error('Arquivo inválido ou em formato antigo (cifrado).');
+  }
+  repairShape(parsed.data);
+  for (const p of parsed.data.payments) p.amount = Number(p.amount) || 0;
+  for (const l of parsed.data.lessons) {
+    l.durationMinutes = Number(l.durationMinutes) || 60;
+    if ('hourlyRate' in l && !Number.isFinite(Number(l.hourlyRate))) delete l.hourlyRate;
+  }
+  for (const s of parsed.data.students) s.hourlyRate = Number(s.hourlyRate) || 0;
+  // Snapshot dos dados atuais: um import ruim deixa de ser irreversível.
+  const current = localStorage.getItem(DATA_KEY);
+  if (current) {
+    try { localStorage.setItem(DATA_KEY + ':pre-import', current); } catch {}
   }
   localStorage.setItem(DATA_KEY, JSON.stringify(parsed.data));
   const meta = readMeta() || freshMeta();
