@@ -6,6 +6,7 @@ const MONTH_YEAR = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'nume
 const MONTH_SHORT = new Intl.DateTimeFormat('pt-BR', { month: 'short' });
 
 export const fmtMoney = (n) => BRL.format(Number(n) || 0);
+export const fmtDM = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 export const fmtTime = (iso) => TIME.format(new Date(iso));
 export const fmtDateLong = (iso) => DATE_LONG.format(new Date(iso));
 export const fmtDateFull = (iso) => DATE_FULL.format(new Date(iso));
