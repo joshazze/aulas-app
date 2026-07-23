@@ -4,6 +4,7 @@ import { exportData, importData } from '../lib/storage.js';
 import { fmtMoney, fmtMonthShort, fmtDateLong } from '../lib/format.js';
 import { rerender } from '../lib/router.js';
 import { lessonValue } from '../lib/pricing.js';
+import { totalEarned as settledEarned, totalReceived as settledReceived } from '../lib/settlement.js';
 
 export async function renderStats() {
   const root = h('div');
@@ -42,27 +43,17 @@ export async function renderStats() {
     }
   }
 
-  const totalReceived = data.payments.reduce((s, p) => s + p.amount, 0);
-  // Por aluno, sem netting: adiantamento de um não abate dívida de outro.
-  const paidByStudent = new Map();
-  for (const p of data.payments) paidByStudent.set(p.studentId, (paidByStudent.get(p.studentId) || 0) + p.amount);
-  const earnedByStudent = new Map();
-  for (const l of data.lessons) {
-    if (l.status !== 'completed') continue;
-    const s = studentMap[l.studentId];
-    if (!s) continue;
-    earnedByStudent.set(l.studentId, (earnedByStudent.get(l.studentId) || 0) + lessonValue(l, s));
-  }
-  let toReceive = 0;
-  for (const [id, earned] of earnedByStudent) {
-    toReceive += Math.max(0, earned - (paidByStudent.get(id) || 0));
-  }
+  // Saldo corrido com a empresa: um PIX cobre todos os alunos, sem conta por aluno.
+  const totalReceived = settledReceived(data);
+  const balance = settledEarned(data) - totalReceived;
+  const toReceive = Math.max(0, balance);
   const totalHours = totalMinutes / 60;
   const avgRate = totalHours > 0 ? totalEarned / totalHours : 0;
 
   root.appendChild(h('div', { class: 'stat-grid' },
-    statCard('Recebido', fmtMoney(totalReceived), 'good', `${data.payments.length} pagamentos`),
-    statCard('A receber', fmtMoney(toReceive), toReceive > 0 ? 'warn' : '', 'soma do que cada aluno deve'),
+    statCard('Recebido', fmtMoney(totalReceived), 'good', `${data.payments.length} acerto${data.payments.length === 1 ? '' : 's'}`),
+    statCard('A receber', fmtMoney(toReceive), toReceive > 0 ? 'warn' : '',
+      toReceive === 0 && balance < -0.005 ? `crédito de ${fmtMoney(-balance)}` : 'saldo corrido (dado menos recebido)'),
     statCard('Ganho total', fmtMoney(totalEarned + plannedAllFuture), '', `${countCompleted} concluídas · ${countScheduledFuture} agendadas`),
     statCard('Planejado', fmtMoney(plannedNext28), 'accent', `próx. 4 semanas · ${countScheduledFuture} agendadas`),
     statCard('Horas trabalhadas', totalHours.toFixed(1).replace('.', ',') + 'h', '', `média ${(totalMinutes / Math.max(countCompleted, 1)).toFixed(0)} min/aula`),
