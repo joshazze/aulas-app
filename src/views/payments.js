@@ -1,77 +1,24 @@
 import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
-import { buildCharge } from '../lib/whatsapp.js';
+import { buildSettlementNote } from '../lib/whatsapp.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addPayment, deletePayment } from '../lib/state.js';
-import { fmtMoney, fmtDateLong } from '../lib/format.js';
-import { lessonValue } from '../lib/pricing.js';
+import { fmtMoney, fmtDateLong, fmtDM } from '../lib/format.js';
+import { totalEarned, totalReceived, runningBalance, expectedSettlement, earnedByStudent } from '../lib/settlement.js';
 import { rerender } from '../lib/router.js';
 
-function lessonsValueByStudent(data) {
-  const map = new Map();
-  for (const l of data.lessons) {
-    if (l.status !== 'completed') continue;
-    const s = data.students.find(s => s.id === l.studentId);
-    if (!s) continue;
-    const v = lessonValue(l, s);
-    map.set(l.studentId, (map.get(l.studentId) || 0) + v);
-  }
-  return map;
-}
-
-function paymentsByStudent(data) {
-  const map = new Map();
-  for (const p of data.payments) {
-    map.set(p.studentId, (map.get(p.studentId) || 0) + p.amount);
-  }
-  return map;
-}
-
-async function paymentDialog() {
-  const { data } = getState();
-  const students = data.students.filter(s => !s.archived);
-  if (students.length === 0) {
-    await openModal({
-      title: 'Sem alunos',
-      body: h('p', null, 'Cadastre um aluno antes de registrar um pagamento.'),
-      actions: [{ label: 'OK', variant: 'btn-primary', value: null }],
-    });
-    return null;
-  }
-
-  const earned = lessonsValueByStudent(data);
-  const paid = paymentsByStudent(data);
-
+async function settlementDialog(expected) {
   const form = h('form');
   const todayLocal = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   })();
 
-  const balanceHint = h('div', { class: 'hint' }, '');
-  const amountInput = h('input', { name: 'amount', type: 'number', step: '0.01', min: '0.01', required: true });
-  let amountTouched = false;
-  amountInput.addEventListener('input', () => { amountTouched = true; });
-  const select = h('select', { name: 'studentId', required: true,
-    onChange: (e) => {
-      const id = e.target.value;
-      const owed = (earned.get(id) || 0) - (paid.get(id) || 0);
-      balanceHint.textContent = owed > 0 ? `Deve: ${fmtMoney(owed)}` : owed < 0 ? `Adiantado: ${fmtMoney(-owed)}` : 'Em dia';
-      // Pré-preenche com o devido; se o Josh já digitou, não sobrescrever.
-      if (!amountTouched) amountInput.value = owed > 0 ? owed.toFixed(2) : '';
-    },
-  },
-    ...students.map(s => h('option', { value: s.id }, s.name)),
-  );
-
   form.append(
     h('div', { class: 'field' },
-      h('label', null, 'Aluno'),
-      select,
-      balanceHint,
-    ),
-    h('div', { class: 'field' },
       h('label', null, 'Valor (R$)'),
-      amountInput,
+      h('input', { name: 'amount', type: 'number', step: '0.01', min: '0.01', required: true,
+        value: expected > 0.005 ? expected.toFixed(2) : '' }),
+      h('div', { class: 'hint' }, expected > 0.005 ? `Esperado: ${fmtMoney(expected)}` : ''),
     ),
     h('div', { class: 'field-row' },
       h('div', { class: 'field' },
@@ -92,18 +39,15 @@ async function paymentDialog() {
       h('input', { name: 'notes', type: 'text' }),
     ),
   );
-  // trigger initial hint
-  select.dispatchEvent(new Event('change'));
 
   return openModal({
-    title: 'Registrar pagamento',
+    title: 'Registrar acerto',
     body: form,
     actions: [
       { label: 'Cancelar', variant: 'btn-ghost', value: null },
       { label: 'Salvar', variant: 'btn-primary', onClick: async (_, close) => {
         if (!form.reportValidity()) return false;
         close({
-          studentId: form.studentId.value,
           amount: form.amount.value,
           dateISO: new Date(form.date.value + 'T12:00:00').toISOString(),
           method: form.method.value,
@@ -114,73 +58,117 @@ async function paymentDialog() {
   });
 }
 
+const cardLabel = (text) => h('div', { class: 'label', style: { fontSize: '11px', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: '600', marginBottom: '10px' } }, text);
+
 export async function renderPayments() {
   const root = h('div');
   const { data } = getState();
 
+  const exp = expectedSettlement(data);
+  const earned = totalEarned(data);
+  const received = totalReceived(data);
+  const balance = runningBalance(data);
+
   const head = h('div', { class: 'section-head' },
-    h('h2', null, 'Pagamentos'),
+    h('h2', null, 'Acertos'),
     h('button', {
       class: 'btn btn-primary btn-sm',
       onClick: async () => {
-        const r = await paymentDialog();
+        const r = await settlementDialog(exp.expected);
         if (r) { await addPayment(r); rerender(); }
       },
-    }, icon('plus'), 'Pagamento'),
+    }, icon('plus'), 'Acerto'),
   );
   root.appendChild(head);
 
-  // Per-student balance card
-  const earned = lessonsValueByStudent(data);
-  const paid = paymentsByStudent(data);
-  const studentIds = new Set([...earned.keys(), ...paid.keys()]);
+  // Saldo corrido com a empresa
+  const balCard = h('div', { class: 'card', style: { marginBottom: '14px' } });
+  balCard.appendChild(cardLabel('Saldo com a empresa'));
+  const balRow = (label, value) => h('div', { class: 'row', style: { padding: '6px 0' } },
+    h('div', { style: { flex: 1 }, class: 'small muted' }, label),
+    h('div', { class: 'tabular', style: { fontWeight: 600 } }, value),
+  );
+  balCard.appendChild(balRow('Dado (aulas concluídas)', fmtMoney(earned)));
+  balCard.appendChild(balRow('Recebido', fmtMoney(received)));
+  balCard.appendChild(h('div', { class: 'row', style: { padding: '8px 0 0', borderTop: '1px solid var(--border)', marginTop: '6px' } },
+    h('div', { style: { flex: 1, fontWeight: 600 } },
+      balance > 0.005 ? 'A receber' : balance < -0.005 ? 'Crédito (pago a mais)' : 'Em dia'),
+    h('div', { class: 'tabular', style: { fontWeight: 700, color: balance > 0.005 ? 'var(--warn)' : balance < -0.005 ? 'var(--accent)' : 'var(--text-2)' } },
+      balance > 0.005 ? fmtMoney(balance) : balance < -0.005 ? fmtMoney(-balance) : 'OK'),
+  ));
+  root.appendChild(balCard);
 
-  if (studentIds.size > 0) {
-    const balCard = h('div', { class: 'card', style: { marginBottom: '14px' } });
-    balCard.appendChild(h('div', { class: 'label', style: { fontSize: '11px', color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: '600', marginBottom: '10px' } }, 'Saldo por aluno'));
-    for (const id of studentIds) {
-      const s = data.students.find(x => x.id === id);
-      if (!s) continue;
-      const e = earned.get(id) || 0;
-      const p = paid.get(id) || 0;
-      const owed = e - p;
-      balCard.appendChild(h('div', { class: 'row', style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
-        h('div', { style: { width: '8px', height: '8px', borderRadius: '999px', background: s.color } }),
-        h('div', { style: { flex: 1, fontWeight: 600 } }, s.name),
-        h('div', { class: 'tabular small muted' }, fmtMoney(p) + ' / ' + fmtMoney(e)),
-        h('div', { class: 'tabular', style: { width: '90px', textAlign: 'right', fontWeight: 600, color: owed > 0.005 ? 'var(--warn)' : owed < -0.005 ? 'var(--accent)' : 'var(--text-2)' } },
-          owed > 0.005 ? fmtMoney(owed) : owed < -0.005 ? '+' + fmtMoney(-owed) : 'OK'),
-        owed > 0.005 && h('button', {
-          class: 'btn btn-ghost btn-sm',
-          title: 'Copiar cobrança p/ WhatsApp',
-          onClick: (e) => copyWithFeedback(buildCharge(s, owed), e.currentTarget),
-        }, icon('copy')),
+  // Próximo acerto (corte no último dia 15)
+  const nextCard = h('div', { class: 'card', style: { marginBottom: '14px' } });
+  nextCard.appendChild(cardLabel('Próximo acerto'));
+  nextCard.appendChild(h('div', { class: 'row' },
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontWeight: 700, fontSize: '22px' }, class: 'tabular' }, fmtMoney(exp.expected)),
+      h('div', { class: 'small muted' },
+        exp.expected === 0 && exp.expectedRaw < -0.005
+          ? `crédito de ${fmtMoney(-exp.expectedRaw)}`
+          : `aulas até ${fmtDM(new Date(exp.cutoff.getTime() - 86400000))}`),
+    ),
+    h('button', {
+      class: 'btn btn-sm',
+      title: 'Copiar conferência p/ WhatsApp',
+      onClick: (e) => copyWithFeedback(buildSettlementNote(data), e.currentTarget),
+    }, icon('copy'), 'Conferência'),
+  ));
+  if (exp.carryOver > 0.005) {
+    nextCard.appendChild(h('div', { class: 'small muted', style: { marginTop: '8px' } },
+      `ciclo ${fmtDM(exp.cycleStart)} a ${fmtDM(new Date(exp.cutoff.getTime() - 86400000))}: ${fmtMoney(exp.cycleTotal)} · atrasado: ${fmtMoney(exp.carryOver)}`));
+  } else if (exp.carryOver < -0.005) {
+    nextCard.appendChild(h('div', { class: 'small muted', style: { marginTop: '8px' } },
+      `ciclo: ${fmtMoney(exp.cycleTotal)} · crédito anterior: ${fmtMoney(-exp.carryOver)}`));
+  }
+  root.appendChild(nextCard);
+
+  // Conferência por aluno do ciclo fechado (pra bater com o PIX da empresa)
+  const per = earnedByStudent(data, { from: exp.cycleStart, until: exp.cutoff });
+  if (per.size > 0) {
+    const confCard = h('div', { class: 'card', style: { marginBottom: '14px' } });
+    confCard.appendChild(cardLabel(`Por aluno · ciclo ${fmtDM(exp.cycleStart)} a ${fmtDM(new Date(exp.cutoff.getTime() - 86400000))}`));
+    const entries = [...per.values()]
+      .sort((a, b) => (a.student?.name || 'Aluno apagado').localeCompare(b.student?.name || 'Aluno apagado', 'pt-BR'));
+    for (const e of entries) {
+      confCard.appendChild(h('div', { class: 'row', style: { padding: '8px 0', borderBottom: '1px solid var(--border)' } },
+        h('div', { style: { width: '8px', height: '8px', borderRadius: '999px', background: e.student?.color || 'var(--text-2)' } }),
+        h('div', { style: { flex: 1, fontWeight: 600 } }, e.student?.name || 'Aluno apagado'),
+        h('div', { class: 'small muted tabular' }, `${e.count} aula${e.count === 1 ? '' : 's'}`),
+        h('div', { class: 'tabular', style: { width: '90px', textAlign: 'right', fontWeight: 600 } }, fmtMoney(e.total)),
       ));
     }
-    root.appendChild(balCard);
+    confCard.appendChild(h('div', { class: 'row', style: { padding: '8px 0 0' } },
+      h('div', { style: { flex: 1, fontWeight: 600 } }, 'Total do ciclo'),
+      h('div', { class: 'tabular', style: { fontWeight: 700 } }, fmtMoney(exp.cycleTotal)),
+    ));
+    root.appendChild(confCard);
   }
 
-  // Payment list
+  // Lista de acertos registrados
   if (data.payments.length === 0) {
-    root.appendChild(emptyState('Sem pagamentos registrados', 'Registre quando receber dinheiro via PIX, dinheiro ou outro método.'));
+    root.appendChild(emptyState('Sem acertos registrados', 'Registre quando a empresa fizer o PIX do ciclo.'));
     return root;
   }
 
   const sorted = [...data.payments].sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   for (const p of sorted) {
-    const s = data.students.find(x => x.id === p.studentId);
+    // studentId só existe em registros antigos (época de pagamento por aluno).
+    const legacyStudent = p.studentId ? data.students.find(x => x.id === p.studentId) : null;
+    const legacyNote = p.studentId ? ` · ${legacyStudent?.name || 'aluno apagado'}` : '';
     root.appendChild(h('div', { class: 'payment' },
       h('div', { class: `badge ${p.method}` }, p.method.toUpperCase()),
       h('div', { style: { flex: 1, minWidth: 0 } },
-        h('div', { style: { fontWeight: 600 } }, s?.name || 'Aluno apagado'),
-        h('div', { class: 'small muted' }, fmtDateLong(p.dateISO) + (p.notes ? ' · ' + p.notes : '')),
+        h('div', { style: { fontWeight: 600 } }, 'Acerto'),
+        h('div', { class: 'small muted' }, fmtDateLong(p.dateISO) + (p.notes ? ' · ' + p.notes : '') + legacyNote),
       ),
       h('div', { class: 'amount tabular' }, fmtMoney(p.amount)),
       h('button', {
         class: 'btn btn-ghost btn-sm',
         title: 'Apagar',
         onClick: async () => {
-          const ok = await confirm('Apagar este pagamento?');
+          const ok = await confirm('Apagar este acerto?');
           if (ok) { await deletePayment(p.id); rerender(); }
         },
       }, icon('trash')),

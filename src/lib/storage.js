@@ -20,6 +20,11 @@ function repairShape(data) {
   for (const k of ['students', 'lessons', 'payments']) {
     if (!Array.isArray(data[k])) data[k] = [];
   }
+  // Paridade com o import: backup editado à mão sem method quebraria a lista.
+  for (const p of data.payments) {
+    p.amount = Number(p.amount) || 0;
+    if (typeof p.method !== 'string' || !p.method) p.method = 'pix';
+  }
   if (!data.settings || typeof data.settings !== 'object') data.settings = { createdAt: null };
   return data;
 }
