@@ -1,4 +1,5 @@
 import { persist, wipeAll } from './storage.js';
+import { showToast } from '../components/ui.js';
 
 const state = {
   meta: null,
@@ -32,6 +33,16 @@ export async function setSession({ data, meta }) {
   notify();
 }
 
+// Congela o rate na aula concluída sem override: aula dada é preço fechado,
+// mudar o hourlyRate do aluno depois não pode reprecificar o passado.
+function freezeRate(d, l) {
+  if (l.status !== 'completed' || l.hourlyRate != null) return false;
+  const s = d.students.find((x) => x.id === l.studentId);
+  if (!s) return false;
+  l.hourlyRate = s.hourlyRate;
+  return true;
+}
+
 let lastAutoCompleteRun = 0;
 export async function autoCompletePastLessons() {
   if (!state.data) return 0;
@@ -40,16 +51,25 @@ export async function autoCompletePastLessons() {
   lastAutoCompleteRun = now;
   let count = 0;
   for (const l of state.data.lessons) {
-    if (l.status !== 'scheduled') continue;
-    if (new Date(l.startISO).getTime() < now) {
+    if (l.status === 'scheduled' && new Date(l.startISO).getTime() < now) {
       l.status = 'completed';
       count++;
     }
+    if (freezeRate(state.data, l)) count++;
   }
   if (count > 0) {
-    persist(state.data);
+    safePersist();
   }
   return count;
+}
+
+function safePersist() {
+  try {
+    persist(state.data);
+  } catch (e) {
+    console.error('persist falhou', e);
+    showToast('ERRO: não consegui salvar (armazenamento cheio?). Exporta um backup AGORA em Stats.', { danger: true, duration: 8000 });
+  }
 }
 
 export function clearSession() {
@@ -67,7 +87,9 @@ export function wipeAllData() {
 export async function mutate(fn) {
   if (!state.data) throw new Error('Sem dados.');
   fn(state.data);
-  persist(state.data);
+  // Quota cheia etc.: a memória já mudou mas o disco não. safePersist avisa ALTO,
+  // senão a UI mostra como salvo e os dados somem no próximo reload.
+  safePersist();
   notify();
 }
 
@@ -187,6 +209,7 @@ export async function updateLesson(id, patch) {
         l.hourlyRate = Number(patch.hourlyRate);
       }
     }
+    freezeRate(d, l);
     if (affectsCalendar) {
       if (synced) {
         l.calSynced = true;
