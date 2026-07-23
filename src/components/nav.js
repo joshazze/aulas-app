@@ -5,7 +5,7 @@ const tabs = [
   { path: '/agenda', label: 'Agenda', icon: 'calendar' },
   { path: '/historico', label: 'Histórico', icon: 'history' },
   { path: '/alunos', label: 'Alunos', icon: 'users' },
-  { path: '/pagamentos', label: 'Pagar', icon: 'money' },
+  { path: '/pagamentos', label: 'Acertos', icon: 'money' },
   { path: '/stats', label: 'Stats', icon: 'stats' },
 ];
 
@@ -14,7 +14,7 @@ const titles = {
   '/agenda': 'Agenda',
   '/historico': 'Histórico',
   '/alunos': 'Alunos',
-  '/pagamentos': 'Pagamentos',
+  '/pagamentos': 'Acertos',
   '/stats': 'Estatísticas',
 };
 

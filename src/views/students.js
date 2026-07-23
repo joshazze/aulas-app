@@ -162,7 +162,7 @@ function studentRow(s) {
         class: 'btn btn-ghost btn-sm',
         title: 'Apagar',
         onClick: async () => {
-          const ok = await confirm(`Apagar ${s.name}? Isso também apaga aulas e pagamentos vinculados.`);
+          const ok = await confirm(`Apagar ${s.name}? Isso apaga as aulas dele e elas somem dos totais (acertos recebidos ficam). Pra manter o histórico, use arquivar.`);
           if (ok) { await deleteStudent(s.id); rerender(); }
         },
       }, icon('trash')),

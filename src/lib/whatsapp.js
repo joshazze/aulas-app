@@ -1,17 +1,6 @@
-import { fmtCompactDateTime, fmtDuration, firstName } from './format.js';
+import { fmtCompactDateTime, fmtDuration, firstName, fmtDM } from './format.js';
 import { lessonValue } from './pricing.js';
-
-function lastCycleStart(now) {
-  const day = now.getDate();
-  if (day >= 15) {
-    return new Date(now.getFullYear(), now.getMonth(), 15, 0, 0, 0, 0);
-  }
-  return new Date(now.getFullYear(), now.getMonth() - 1, 15, 0, 0, 0, 0);
-}
-
-function fmtDM(d) {
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+import { lastCycleStart, expectedSettlement, earnedByStudent } from './settlement.js';
 
 function fmtBRL(n) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -104,18 +93,31 @@ export function buildConfirmation(lessonOrLessons, student) {
   ].join('\n');
 }
 
-export function buildCharge(student, owed, unpaidLessons = []) {
-  const nome = firstName(student?.name) || 'aluno';
-  const lines = [
-    `Oi ${nome}! Tudo bem?`,
-    '',
-    `Passando pra fechar nossas aulas: deu *${fmtBRL(owed)}* no total.`,
-  ];
-  if (unpaidLessons.length > 0) {
-    lines.push('', `São ${unpaidLessons.length} aula${unpaidLessons.length === 1 ? '' : 's'}:`);
-    const sorted = [...unpaidLessons].sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
-    lines.push(...sorted.map((l) => `📅 ${fmtCompactDateTime(l.startISO)} (${fmtDuration(l.durationMinutes)})`));
+// Nota de conferência do acerto da empresa: por-aluno do ciclo FECHADO
+// (15 do mês anterior até o dia 14) + saldo/crédito anterior. A soma bate
+// com o "Próximo acerto" do card: cycleTotal + carryOver = expectedRaw.
+export function buildSettlementNote(data, now = new Date()) {
+  const { cutoff, cycleStart, cycleTotal, carryOver, expectedRaw } = expectedSettlement(data, now);
+  const lastDay = new Date(cutoff.getTime() - 86400000);
+  const lines = [`📋 *Acerto: aulas de ${fmtDM(cycleStart)} a ${fmtDM(lastDay)}*`];
+  const entries = [...earnedByStudent(data, { from: cycleStart, until: cutoff }).values()]
+    .sort((a, b) => (a.student?.name || 'Aluno apagado').localeCompare(b.student?.name || 'Aluno apagado', 'pt-BR'));
+  if (entries.length === 0) {
+    lines.push('_Nenhuma aula no ciclo._');
+  } else {
+    for (const e of entries) {
+      const name = e.student?.name || 'Aluno apagado';
+      lines.push(`• ${name}: ${e.count} aula${e.count === 1 ? '' : 's'} · ${fmtBRL(e.total)}`);
+    }
   }
-  lines.push('', 'Pode fazer o PIX quando conseguir 🙂');
+  lines.push(`*Total do ciclo: ${fmtBRL(cycleTotal)}*`);
+  if (carryOver > 0.005) {
+    lines.push(`_Saldo anterior: ${fmtBRL(carryOver)}_`);
+    lines.push(`*Total a receber: ${fmtBRL(expectedRaw)}*`);
+  } else if (carryOver < -0.005) {
+    const covered = Math.min(-carryOver, cycleTotal);
+    lines.push(`_Já pago: ${fmtBRL(covered)}_`);
+    lines.push(`*Total a receber: ${fmtBRL(Math.max(0, expectedRaw))}*`);
+  }
   return lines.join('\n');
 }

@@ -164,7 +164,7 @@ export async function deleteStudent(id) {
     }
     d.students = d.students.filter((s) => s.id !== id);
     d.lessons = d.lessons.filter((l) => l.studentId !== id);
-    d.payments = d.payments.filter((p) => p.studentId !== id);
+    // Payments ficam: são acertos da empresa (dinheiro que entrou), não do aluno.
   });
 }
 
@@ -255,12 +255,11 @@ export async function setLessonStatus(id, status) {
   await updateLesson(id, { status });
 }
 
-// Payments --------------------------------------------------
-export async function addPayment({ studentId, amount, dateISO, method, notes }) {
+// Payments (acertos da empresa; studentId só existe em registros legados) ----
+export async function addPayment({ amount, dateISO, method, notes }) {
   await mutate((d) => {
     d.payments.push({
       id: uid(),
-      studentId,
       amount: Number(amount) || 0,
       dateISO,
       method: method || 'pix',
