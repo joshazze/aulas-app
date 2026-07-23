@@ -96,12 +96,19 @@ function tombstoneIfSynced(d, l) {
 }
 
 // Students --------------------------------------------------
-export async function addStudent({ name, hourlyRate, color, notes }) {
+function normalizeExtraRates(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((r) => ({ label: String(r.label || '').trim(), hourlyRate: Number(r.hourlyRate) }))
+    .filter((r) => r.label && r.hourlyRate > 0);
+}
+
+export async function addStudent({ name, hourlyRate, color, notes, extraRates }) {
   await mutate((d) => {
     d.students.push({
       id: uid(),
       name: name.trim(),
       hourlyRate: Number(hourlyRate) || 0,
+      extraRates: normalizeExtraRates(extraRates),
       color: color || '#5eead4',
       notes: notes || '',
       archived: false,
@@ -116,6 +123,7 @@ export async function updateStudent(id, patch) {
     if (!s) return;
     Object.assign(s, patch);
     if ('hourlyRate' in patch) s.hourlyRate = Number(patch.hourlyRate) || 0;
+    if ('extraRates' in patch) s.extraRates = normalizeExtraRates(patch.extraRates);
   });
 }
 
@@ -139,9 +147,9 @@ export async function deleteStudent(id) {
 }
 
 // Lessons ---------------------------------------------------
-export async function addLesson({ studentId, startISO, durationMinutes, notes }) {
+export async function addLesson({ studentId, startISO, durationMinutes, notes, hourlyRate }) {
   await mutate((d) => {
-    d.lessons.push({
+    const lesson = {
       id: uid(),
       studentId,
       startISO,
@@ -150,7 +158,11 @@ export async function addLesson({ studentId, startISO, durationMinutes, notes })
       notes: notes || '',
       addedToCalendar: false,
       createdAt: new Date().toISOString(),
-    });
+    };
+    if (hourlyRate != null && hourlyRate !== '' && Number.isFinite(Number(hourlyRate))) {
+      lesson.hourlyRate = Number(hourlyRate);
+    }
+    d.lessons.push(lesson);
   });
 }
 
@@ -168,6 +180,13 @@ export async function updateLesson(id, patch) {
     const synced = wasEverSynced(l);
     Object.assign(l, patch);
     if ('durationMinutes' in patch) l.durationMinutes = Number(patch.durationMinutes) || 60;
+    if ('hourlyRate' in patch) {
+      if (patch.hourlyRate == null || patch.hourlyRate === '' || !Number.isFinite(Number(patch.hourlyRate))) {
+        delete l.hourlyRate;
+      } else {
+        l.hourlyRate = Number(patch.hourlyRate);
+      }
+    }
     if (affectsCalendar) {
       if (synced) {
         l.calSynced = true;

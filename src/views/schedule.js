@@ -2,6 +2,7 @@ import { h, icon, emptyState, copyWithFeedback } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus, markCalendarAdded } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
+import { lessonValue } from '../lib/pricing.js';
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
 import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
@@ -19,6 +20,57 @@ import {
 
 let viewMonth = startOfMonth(new Date());
 
+// Campo "Valor" dos forms de aula: padrão do aluno, valor extra nomeado ou personalizado.
+// getValue() devolve null (= padrão dinâmico) ou o número congelado na aula.
+function rateField(students, initialStudentId, existingHourlyRate) {
+  let current = students.find((x) => x.id === initialStudentId) || students[0];
+  const select = h('select', { name: 'rateChoice' });
+  const customInput = h('input', {
+    name: 'customRate', type: 'number', step: '0.01', min: '0', placeholder: 'R$/h',
+    style: { display: 'none', marginTop: '6px' },
+  });
+
+  const build = (choice) => {
+    const extras = current?.extraRates || [];
+    select.replaceChildren(
+      h('option', { value: 'default', selected: choice === 'default' }, `Padrão (${fmtMoney(current?.hourlyRate || 0)}/h)`),
+      ...extras.map((r, i) => h('option', { value: `extra:${i}`, selected: choice === `extra:${i}` }, `${r.label} · ${fmtMoney(r.hourlyRate)}/h`)),
+      h('option', { value: 'custom', selected: choice === 'custom' }, 'Personalizado…'),
+    );
+    customInput.style.display = choice === 'custom' ? '' : 'none';
+  };
+
+  let initialChoice = 'default';
+  if (existingHourlyRate != null) {
+    const i = (current?.extraRates || []).findIndex((r) => r.hourlyRate === existingHourlyRate);
+    initialChoice = i >= 0 ? `extra:${i}` : 'custom';
+    if (initialChoice === 'custom') customInput.value = existingHourlyRate;
+  }
+  build(initialChoice);
+
+  select.addEventListener('change', () => {
+    customInput.style.display = select.value === 'custom' ? '' : 'none';
+    if (select.value === 'custom') customInput.focus();
+  });
+
+  return {
+    el: h('div', { class: 'field' }, h('label', null, 'Valor'), select, customInput),
+    refresh(studentId) {
+      current = students.find((x) => x.id === studentId) || current;
+      build(select.value === 'custom' ? 'custom' : 'default');
+    },
+    getValue() {
+      if (select.value === 'default') return null;
+      if (select.value === 'custom') {
+        const n = Number(customInput.value);
+        return customInput.value !== '' && Number.isFinite(n) ? n : null;
+      }
+      const i = Number(select.value.slice('extra:'.length));
+      return (current?.extraRates || [])[i]?.hourlyRate ?? null;
+    },
+  };
+}
+
 async function lessonDialog(existing, defaultDate) {
   const { data } = getState();
   const students = data.students.filter(s => !s.archived);
@@ -32,10 +84,15 @@ async function lessonDialog(existing, defaultDate) {
   }
 
   const form = h('form');
+  const rate = rateField(students, existing?.studentId || students[0].id, existing?.hourlyRate);
   form.append(
     h('div', { class: 'field' },
       h('label', null, 'Aluno'),
-      h('select', { name: 'studentId', required: true },
+      h('select', {
+        name: 'studentId',
+        required: true,
+        onChange: (e) => rate.refresh(e.target.value),
+      },
         ...students.map(s => h('option', { value: s.id, selected: existing?.studentId === s.id }, s.name)),
       ),
     ),
@@ -52,6 +109,7 @@ async function lessonDialog(existing, defaultDate) {
       h('label', null, 'Duração (minutos)'),
       h('input', { name: 'duration', type: 'number', step: '15', min: '15', required: true, value: existing?.durationMinutes ?? 60 }),
     ),
+    rate.el,
     h('div', { class: 'field' },
       h('label', null, 'Notas'),
       h('textarea', { name: 'notes', rows: 2 }, existing?.notes || ''),
@@ -78,6 +136,7 @@ async function lessonDialog(existing, defaultDate) {
           studentId: form.studentId.value,
           startISO: fromDateTimeLocal(form.start.value),
           durationMinutes: form.duration.value,
+          hourlyRate: rate.getValue(),
           notes: form.notes.value,
         });
       } },
@@ -205,7 +264,7 @@ export async function renderSchedule() {
 }
 
 export function lessonRow(l, s, opts = {}) {
-  const valor = ((l.durationMinutes / 60) * (s?.hourlyRate || 0));
+  const valor = lessonValue(l, s);
   const isUpcoming = isUpcomingScheduled(l);
   const selectable = opts.selectable;
   const selectedIds = getSelectedIds();
@@ -226,10 +285,11 @@ export function lessonRow(l, s, opts = {}) {
         fmtTime(l.startISO),
         ' · ',
         (l.durationMinutes / 60).toString().replace('.', ',') + 'h',
+        l.hourlyRate != null ? ' · ' + fmtMoney(l.hourlyRate) + '/h' : '',
         l.notes ? ' · ' + l.notes : '',
       ),
     ),
-    h('div', { class: 'price' }, fmtMoney(valor)),
+    h('div', { class: 'price', title: l.hourlyRate != null ? 'Valor personalizado' : null }, fmtMoney(valor)),
     !selectable && h('div', { class: 'lesson-actions' },
       isUpcoming && h('button', {
         class: 'btn btn-ghost btn-sm',
@@ -259,10 +319,15 @@ async function editLesson(l) {
   const students = data.students;
   const s = students.find((x) => x.id === l.studentId);
   const form = h('form');
+  const rate = rateField(students, l.studentId, l.hourlyRate);
   form.append(
     h('div', { class: 'field' },
       h('label', null, 'Aluno'),
-      h('select', { name: 'studentId', required: true },
+      h('select', {
+        name: 'studentId',
+        required: true,
+        onChange: (e) => rate.refresh(e.target.value),
+      },
         ...students.map(s => h('option', { value: s.id, selected: l.studentId === s.id }, s.name)),
       ),
     ),
@@ -274,6 +339,7 @@ async function editLesson(l) {
       h('label', null, 'Duração (minutos)'),
       h('input', { name: 'duration', type: 'number', step: '15', min: '15', required: true, value: l.durationMinutes }),
     ),
+    rate.el,
     h('div', { class: 'field' },
       h('label', null, 'Status'),
       h('select', { name: 'status' },
@@ -292,6 +358,7 @@ async function editLesson(l) {
     startISO: fromDateTimeLocal(form.start.value),
     durationMinutes: form.duration.value,
     status: form.status.value,
+    hourlyRate: rate.getValue(),
     notes: form.notes.value,
   });
   return openModal({
