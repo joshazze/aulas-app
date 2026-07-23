@@ -1,6 +1,6 @@
 import { h, icon, emptyState, copyToClipboard } from '../components/ui.js';
 import { openModal } from '../components/modal.js';
-import { getState, markCalendarAdded } from '../lib/state.js';
+import { getState, markCalendarAdded, wasEverSynced } from '../lib/state.js';
 import { fmtDateRelative, dayKey, fmtMoney } from '../lib/format.js';
 import { lessonRow } from './schedule.js';
 import { navigate, rerender } from '../lib/router.js';
@@ -166,25 +166,36 @@ export async function renderDashboard() {
       },
     }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
 
-    const pendingCalendar = data.lessons.filter((l) =>
-      !l.addedToCalendar &&
-      l.status === 'scheduled' &&
-      new Date(l.startISO).getTime() > Date.now()
+    const pendingLessons = data.lessons.filter((l) =>
+      !l.addedToCalendar && (
+        (l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now()) ||
+        (l.status === 'cancelled' && wasEverSynced(l))
+      )
     );
-    const hasPending = pendingCalendar.length > 0;
+    const pendingTombstones = (data.calendarTombstones || []).map((t) => ({
+      id: t.id,
+      studentId: null,
+      studentName: t.studentName,
+      startISO: t.startISO,
+      durationMinutes: t.durationMinutes,
+      status: 'cancelled',
+      calSeq: t.calSeq,
+    }));
+    const pendingCount = pendingLessons.length + pendingTombstones.length;
+    const hasPending = pendingCount > 0;
     root.appendChild(h('button', {
       class: 'btn btn-block',
       style: { marginBottom: '18px', justifyContent: 'flex-start' },
       disabled: !hasPending,
       onClick: hasPending ? async () => {
-        const ics = buildICS(pendingCalendar, studentMap);
+        const ics = buildICS([...pendingLessons, ...pendingTombstones], studentMap);
         downloadICS(icsFilename('aulas-novas'), ics);
-        await markCalendarAdded(pendingCalendar.map((l) => l.id));
+        await markCalendarAdded(pendingLessons.map((l) => l.id), pendingTombstones.map((t) => t.id));
         rerender();
       } : null,
     }, icon('calendar'),
       hasPending
-        ? `Sincronizar calendário (${pendingCalendar.length})`
+        ? `Sincronizar calendário (${pendingCount})`
         : 'Calendário sincronizado ✓',
     ));
   }

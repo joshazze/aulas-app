@@ -75,6 +75,26 @@ function uid() {
   return crypto.randomUUID();
 }
 
+// true se a aula já foi exportada pro calendário alguma vez.
+// Legado: dados antigos não têm calSynced, mas addedToCalendar=true implica sincronizada.
+export function wasEverSynced(l) {
+  return !!(l.calSynced || l.addedToCalendar);
+}
+
+function tombstoneIfSynced(d, l) {
+  if (!wasEverSynced(l)) return;
+  if (new Date(l.startISO).getTime() <= Date.now()) return;
+  const s = d.students.find((x) => x.id === l.studentId);
+  (d.calendarTombstones ||= []).push({
+    id: l.id,
+    calSeq: (l.calSeq || 0) + 1,
+    startISO: l.startISO,
+    durationMinutes: l.durationMinutes,
+    studentName: s?.name || '',
+    deletedAt: new Date().toISOString(),
+  });
+}
+
 // Students --------------------------------------------------
 export async function addStudent({ name, hourlyRate, color, notes }) {
   await mutate((d) => {
@@ -109,6 +129,9 @@ export async function unarchiveStudent(id) {
 
 export async function deleteStudent(id) {
   await mutate((d) => {
+    for (const l of d.lessons) {
+      if (l.studentId === id) tombstoneIfSynced(d, l);
+    }
     d.students = d.students.filter((s) => s.id !== id);
     d.lessons = d.lessons.filter((l) => l.studentId !== id);
     d.payments = d.payments.filter((p) => p.studentId !== id);
@@ -135,28 +158,47 @@ export async function updateLesson(id, patch) {
   await mutate((d) => {
     const l = d.lessons.find((x) => x.id === id);
     if (!l) return;
-    const breaksCalendar =
+    const affectsCalendar =
       ('startISO' in patch && patch.startISO !== l.startISO) ||
       ('durationMinutes' in patch && Number(patch.durationMinutes) !== l.durationMinutes) ||
-      ('studentId' in patch && patch.studentId !== l.studentId);
+      ('studentId' in patch && patch.studentId !== l.studentId) ||
+      ('notes' in patch && (patch.notes || '') !== (l.notes || '')) ||
+      ('status' in patch && patch.status !== l.status &&
+        (patch.status === 'cancelled' || l.status === 'cancelled'));
+    const synced = wasEverSynced(l);
     Object.assign(l, patch);
     if ('durationMinutes' in patch) l.durationMinutes = Number(patch.durationMinutes) || 60;
-    if (breaksCalendar) l.addedToCalendar = false;
+    if (affectsCalendar) {
+      if (synced) {
+        l.calSynced = true;
+        l.calSeq = (l.calSeq || 0) + 1;
+      }
+      l.addedToCalendar = false;
+    }
   });
 }
 
-export async function markCalendarAdded(ids) {
+export async function markCalendarAdded(ids, tombstoneIds = []) {
   const set = new Set(ids);
   await mutate((d) => {
     for (const l of d.lessons) {
-      if (set.has(l.id)) l.addedToCalendar = true;
+      if (set.has(l.id)) {
+        l.addedToCalendar = true;
+        l.calSynced = true;
+      }
+    }
+    if (tombstoneIds.length && d.calendarTombstones) {
+      const gone = new Set(tombstoneIds);
+      d.calendarTombstones = d.calendarTombstones.filter((t) => !gone.has(t.id));
     }
   });
 }
 
 export async function deleteLesson(id) {
   await mutate((d) => {
-    d.lessons = d.lessons.filter((l) => l.id !== id);
+    const l = d.lessons.find((x) => x.id === id);
+    if (l) tombstoneIfSynced(d, l);
+    d.lessons = d.lessons.filter((x) => x.id !== id);
   });
 }
 

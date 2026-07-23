@@ -39,13 +39,18 @@ export function buildICS(lessons, studentMap) {
     const s = studentMap[l.studentId];
     const start = new Date(l.startISO);
     const end = new Date(start.getTime() + l.durationMinutes * 60_000);
+    const cancelled = l.status === 'cancelled';
+    const name = s?.name || l.studentName || 'aluno';
     lines.push(
       'BEGIN:VEVENT',
       fold(`UID:${l.id}@aulas-app`),
       `DTSTAMP:${stamp}`,
+      `LAST-MODIFIED:${stamp}`,
+      `SEQUENCE:${l.calSeq || 0}`,
+      `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
       `DTSTART:${toICSUtc(start)}`,
       `DTEND:${toICSUtc(end)}`,
-      fold(`SUMMARY:${escapeICS('Aula com ' + (s?.name || 'aluno'))}`),
+      fold(`SUMMARY:${escapeICS((cancelled ? 'Cancelada: ' : '') + 'Aula com ' + name)}`),
     );
     if (l.notes) lines.push(fold(`DESCRIPTION:${escapeICS(l.notes)}`));
     lines.push('END:VEVENT');
