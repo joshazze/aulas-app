@@ -1,7 +1,8 @@
-import { h } from '../components/ui.js';
-import { getState, wipeAllData, setSession } from '../lib/state.js';
+import { h, showToast } from '../components/ui.js';
+import { getState, wipeAllData, setSession, mutate } from '../lib/state.js';
 import { exportData, importData } from '../lib/storage.js';
-import { fmtMoney, fmtMonthShort } from '../lib/format.js';
+import { fmtMoney, fmtMonthShort, fmtDateLong } from '../lib/format.js';
+import { rerender } from '../lib/router.js';
 import { lessonValue } from '../lib/pricing.js';
 
 export async function renderStats() {
@@ -42,13 +43,26 @@ export async function renderStats() {
   }
 
   const totalReceived = data.payments.reduce((s, p) => s + p.amount, 0);
-  const toReceive = Math.max(0, totalEarned - totalReceived);
+  // Por aluno, sem netting: adiantamento de um não abate dívida de outro.
+  const paidByStudent = new Map();
+  for (const p of data.payments) paidByStudent.set(p.studentId, (paidByStudent.get(p.studentId) || 0) + p.amount);
+  const earnedByStudent = new Map();
+  for (const l of data.lessons) {
+    if (l.status !== 'completed') continue;
+    const s = studentMap[l.studentId];
+    if (!s) continue;
+    earnedByStudent.set(l.studentId, (earnedByStudent.get(l.studentId) || 0) + lessonValue(l, s));
+  }
+  let toReceive = 0;
+  for (const [id, earned] of earnedByStudent) {
+    toReceive += Math.max(0, earned - (paidByStudent.get(id) || 0));
+  }
   const totalHours = totalMinutes / 60;
   const avgRate = totalHours > 0 ? totalEarned / totalHours : 0;
 
   root.appendChild(h('div', { class: 'stat-grid' },
     statCard('Recebido', fmtMoney(totalReceived), 'good', `${data.payments.length} pagamentos`),
-    statCard('A receber', fmtMoney(toReceive), toReceive > 0 ? 'warn' : '', 'aulas concluídas não pagas'),
+    statCard('A receber', fmtMoney(toReceive), toReceive > 0 ? 'warn' : '', 'soma do que cada aluno deve'),
     statCard('Ganho total', fmtMoney(totalEarned + plannedAllFuture), '', `${countCompleted} concluídas · ${countScheduledFuture} agendadas`),
     statCard('Planejado', fmtMoney(plannedNext28), 'accent', `próx. 4 semanas · ${countScheduledFuture} agendadas`),
     statCard('Horas trabalhadas', totalHours.toFixed(1).replace('.', ',') + 'h', '', `média ${(totalMinutes / Math.max(countCompleted, 1)).toFixed(0)} min/aula`),
@@ -113,6 +127,9 @@ export async function renderStats() {
       } }, 'Apagar tudo'),
     ),
     h('p', { class: 'small muted', style: { marginTop: '12px', marginBottom: 0 } },
+      lastBackupLabel(data),
+    ),
+    h('p', { class: 'small muted', style: { marginTop: '6px', marginBottom: 0 } },
       'Dados ficam apenas neste dispositivo. O backup é um JSON puro — sem senha, qualquer um com o arquivo consegue ler.',
     ),
   ));
@@ -140,7 +157,7 @@ function statCard(label, value, tone, sub) {
   );
 }
 
-function doExport() {
+async function doExport() {
   const json = exportData();
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -149,6 +166,24 @@ function doExport() {
   a.download = `aulas-backup-${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  await mutate((d) => { d.settings.lastBackupAt = new Date().toISOString(); });
+  showToast('Backup baixado. Guarda o arquivo fora do aparelho (iCloud/Drive).');
+  rerender();
+}
+
+export function lastBackupLabel(data) {
+  const at = data.settings?.lastBackupAt;
+  if (!at) return 'Nenhum backup exportado ainda.';
+  const days = Math.floor((Date.now() - new Date(at).getTime()) / 86400000);
+  const when = days === 0 ? 'hoje' : days === 1 ? 'ontem' : `há ${days} dias (${fmtDateLong(at)})`;
+  return `Último backup: ${when}.`;
+}
+
+export function backupIsStale(data) {
+  if (data.lessons.length === 0 && data.students.length === 0) return false;
+  const at = data.settings?.lastBackupAt;
+  if (!at) return true;
+  return (Date.now() - new Date(at).getTime()) > 30 * 86400000;
 }
 
 function doImport() {

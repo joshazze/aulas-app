@@ -56,6 +56,7 @@ export async function renderHistory() {
 
   for (const { date, lessons } of groups.values()) {
     const total = lessons.reduce((sum, l) => {
+      if (l.status === 'cancelled') return sum;
       const s = studentMap[l.studentId];
       return sum + lessonValue(l, s);
     }, 0);
