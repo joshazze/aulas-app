@@ -200,6 +200,7 @@ export async function updateLesson(id, patch) {
       ('status' in patch && patch.status !== l.status &&
         (patch.status === 'cancelled' || l.status === 'cancelled'));
     const synced = wasEverSynced(l);
+    const prevStatus = l.status;
     Object.assign(l, patch);
     if ('durationMinutes' in patch) l.durationMinutes = Number(patch.durationMinutes) || 60;
     if ('hourlyRate' in patch) {
@@ -208,6 +209,12 @@ export async function updateLesson(id, patch) {
       } else {
         l.hourlyRate = Number(patch.hourlyRate);
       }
+    }
+    // Reabrir aula concluída: se o congelado é o próprio padrão do aluno,
+    // descongela e volta ao dinâmico (o freeze foi automático, não promo).
+    if (prevStatus === 'completed' && l.status === 'scheduled') {
+      const s = d.students.find((x) => x.id === l.studentId);
+      if (s && l.hourlyRate === s.hourlyRate) delete l.hourlyRate;
     }
     freezeRate(d, l);
     if (affectsCalendar) {

@@ -169,10 +169,13 @@ export async function renderDashboard() {
       },
     }, icon('copy'), 'Copiar resumo p/ WhatsApp'));
 
+    // Pendente = nunca-sincronizada futura, OU qualquer aula já exportada cujo
+    // evento ficou desatualizado (editada, cancelada, movida pro passado) —
+    // senão mover aula sincronizada de futuro pra passado deixa fantasma no calendário.
     const pendingLessons = data.lessons.filter((l) =>
       !l.addedToCalendar && (
-        (l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now()) ||
-        (l.status === 'cancelled' && wasEverSynced(l))
+        wasEverSynced(l) ||
+        (l.status === 'scheduled' && new Date(l.startISO).getTime() > Date.now())
       )
     );
     const pendingTombstones = (data.calendarTombstones || []).map((t) => ({

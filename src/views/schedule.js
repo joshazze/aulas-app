@@ -25,10 +25,18 @@ let viewMonth = startOfMonth(new Date());
 function rateField(students, initialStudentId, existingHourlyRate) {
   let current = students.find((x) => x.id === initialStudentId) || students[0];
   const select = h('select', { name: 'rateChoice' });
+  // Escondido precisa ser disabled também: input invisível inválido participa
+  // da validação e trava o Salvar sem o browser conseguir mostrar o balão.
   const customInput = h('input', {
     name: 'customRate', type: 'number', step: '0.01', min: '0', placeholder: 'R$/h',
+    disabled: true,
     style: { display: 'none', marginTop: '6px' },
   });
+
+  const toggleCustom = (on) => {
+    customInput.style.display = on ? '' : 'none';
+    customInput.disabled = !on;
+  };
 
   const build = (choice) => {
     const extras = current?.extraRates || [];
@@ -37,11 +45,12 @@ function rateField(students, initialStudentId, existingHourlyRate) {
       ...extras.map((r, i) => h('option', { value: `extra:${i}`, selected: choice === `extra:${i}` }, `${r.label} · ${fmtMoney(r.hourlyRate)}/h`)),
       h('option', { value: 'custom', selected: choice === 'custom' }, 'Personalizado…'),
     );
-    customInput.style.display = choice === 'custom' ? '' : 'none';
+    toggleCustom(choice === 'custom');
   };
 
+  // Congelado no valor que É o padrão atual do aluno não é promo: mostrar "Padrão".
   let initialChoice = 'default';
-  if (existingHourlyRate != null) {
+  if (existingHourlyRate != null && existingHourlyRate !== (current?.hourlyRate ?? null)) {
     const i = (current?.extraRates || []).findIndex((r) => r.hourlyRate === existingHourlyRate);
     initialChoice = i >= 0 ? `extra:${i}` : 'custom';
     if (initialChoice === 'custom') customInput.value = existingHourlyRate;
@@ -49,7 +58,7 @@ function rateField(students, initialStudentId, existingHourlyRate) {
   build(initialChoice);
 
   select.addEventListener('change', () => {
-    customInput.style.display = select.value === 'custom' ? '' : 'none';
+    toggleCustom(select.value === 'custom');
     if (select.value === 'custom') customInput.focus();
   });
 
@@ -92,12 +101,17 @@ async function lessonDialog(existing, defaultDate) {
   const form = h('form');
   const rate = rateField(students, preselectedId, existing?.hourlyRate);
 
+  // disabled quando escondido: senão um valor inválido esquecido (ex. 1)
+  // continua na validação e mata o Salvar em silêncio.
   const repeatCount = h('input', {
     name: 'repeatCount', type: 'number', min: '2', max: '26', value: 4,
+    disabled: true,
     style: { display: 'none', marginTop: '6px' },
   });
   const repeatSelect = h('select', { name: 'repeat', onChange: () => {
-    repeatCount.style.display = repeatSelect.value === 'weekly' ? '' : 'none';
+    const weekly = repeatSelect.value === 'weekly';
+    repeatCount.style.display = weekly ? '' : 'none';
+    repeatCount.disabled = !weekly;
   } },
     h('option', { value: 'none' }, 'Não repete'),
     h('option', { value: 'weekly' }, 'Toda semana (mesmo dia e hora)'),
