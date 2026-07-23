@@ -115,7 +115,8 @@ export function buildSettlementNote(data, now = new Date()) {
     lines.push(`_Saldo anterior: ${fmtBRL(carryOver)}_`);
     lines.push(`*Total a receber: ${fmtBRL(expectedRaw)}*`);
   } else if (carryOver < -0.005) {
-    lines.push(`_Crédito anterior: ${fmtBRL(-carryOver)}_`);
+    const covered = Math.min(-carryOver, cycleTotal);
+    lines.push(`_Já pago: ${fmtBRL(covered)}_`);
     lines.push(`*Total a receber: ${fmtBRL(Math.max(0, expectedRaw))}*`);
   }
   return lines.join('\n');

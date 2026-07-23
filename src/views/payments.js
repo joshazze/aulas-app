@@ -119,8 +119,11 @@ export async function renderPayments() {
     nextCard.appendChild(h('div', { class: 'small muted', style: { marginTop: '8px' } },
       `ciclo ${fmtDM(exp.cycleStart)} a ${fmtDM(new Date(exp.cutoff.getTime() - 86400000))}: ${fmtMoney(exp.cycleTotal)} · atrasado: ${fmtMoney(exp.carryOver)}`));
   } else if (exp.carryOver < -0.005) {
+    // carryOver negativo = pagamentos já cobrem parte (ou todo) o ciclo fechado.
+    // O excedente além do ciclo é crédito real e aparece no sub da manchete.
+    const covered = Math.min(-exp.carryOver, exp.cycleTotal);
     nextCard.appendChild(h('div', { class: 'small muted', style: { marginTop: '8px' } },
-      `ciclo: ${fmtMoney(exp.cycleTotal)} · crédito anterior: ${fmtMoney(-exp.carryOver)}`));
+      `ciclo: ${fmtMoney(exp.cycleTotal)} · já pago: ${fmtMoney(covered)}`));
   }
   root.appendChild(nextCard);
 
