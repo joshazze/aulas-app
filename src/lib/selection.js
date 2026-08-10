@@ -1,8 +1,8 @@
-import { h, icon, copyWithFeedback } from '../components/ui.js';
+import { h, icon, copyWithFeedback, copyToClipboard, showToast } from '../components/ui.js';
 import { getState, markCalendarAdded } from './state.js';
 import { rerender } from './router.js';
 import { buildConfirmation } from './whatsapp.js';
-import { buildICS, downloadICS, icsFilename } from './ics.js';
+import { calendarOps, buildCalendarPrompt } from './calprompt.js';
 
 let selectionMode = false;
 let selectedIds = new Set();
@@ -74,9 +74,14 @@ export function selectionBar(studentMap) {
     h('button', {
       class: 'btn btn-sm',
       onClick: async () => {
-        const ics = buildICS(lessons, studentMap);
-        downloadICS(icsFilename('aulas-' + (student?.name || 'aluno')), ics);
+        const ops = calendarOps(lessons, [], studentMap);
+        const ok = await copyToClipboard(buildCalendarPrompt(ops));
+        if (!ok) {
+          showToast('Não consegui copiar. Tenta de novo.', { danger: true });
+          return;
+        }
         await markCalendarAdded(lessons.map((l) => l.id));
+        showToast('Prompt copiado. Cola numa conversa com o Claude no Mac pra ele escrever no calendário.', { duration: 6000 });
         rerender();
       },
     }, icon('calendar'), 'Calendário'),

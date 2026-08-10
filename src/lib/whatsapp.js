@@ -67,6 +67,12 @@ export function buildSummary(data, opts = {}) {
   return sections.join('\n\n').trim();
 }
 
+// Pedido de material, igual nas duas versões da confirmação (uma aula ou várias).
+export const PEDIDO_CONTEUDO = [
+  'Caso a aula seja confirmada, gentileza mandar o conteúdo a ser trabalhado o mais rápido possível! 📚',
+  '_(fotos do quadro, fotos do caderno, fotos do livro, páginas e nome do livro, PDFs, apostilas, etc.)_',
+].join('\n');
+
 export function buildConfirmation(lessonOrLessons, student) {
   const arr = Array.isArray(lessonOrLessons) ? lessonOrLessons : [lessonOrLessons];
   const nome = firstName(student?.name) || 'aluno';
@@ -79,6 +85,8 @@ export function buildConfirmation(lessonOrLessons, student) {
       `📅 *${fmtCompactDateTime(l.startISO)}*`,
       `⏱️ ${fmtDuration(l.durationMinutes)}`,
       '',
+      PEDIDO_CONTEUDO,
+      '',
       `Combinado? 🤝`,
     ].join('\n');
   }
@@ -88,6 +96,8 @@ export function buildConfirmation(lessonOrLessons, student) {
     '',
     `Confirmando nossas ${arr.length} aulas:`,
     ...sorted.map((l) => `📅 *${fmtCompactDateTime(l.startISO)}* (${fmtDuration(l.durationMinutes)})`),
+    '',
+    PEDIDO_CONTEUDO,
     '',
     `Combinado? 🤝`,
   ].join('\n');
