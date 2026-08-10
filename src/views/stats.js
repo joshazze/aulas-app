@@ -1,5 +1,6 @@
 import { h, showToast } from '../components/ui.js';
-import { getState, wipeAllData, setSession, mutate } from '../lib/state.js';
+import { confirm } from '../components/modal.js';
+import { getState, wipeAllData, setSession, mutate, forgetCalendarSync } from '../lib/state.js';
 import { exportData, importData } from '../lib/storage.js';
 import { fmtMoney, fmtMonthShort, fmtDateLong } from '../lib/format.js';
 import { rerender } from '../lib/router.js';
@@ -121,7 +122,27 @@ export async function renderStats() {
       lastBackupLabel(data),
     ),
     h('p', { class: 'small muted', style: { marginTop: '6px', marginBottom: 0 } },
-      'Dados ficam apenas neste dispositivo. O backup é um JSON puro — sem senha, qualquer um com o arquivo consegue ler.',
+      'Dados ficam apenas neste dispositivo. O backup é um JSON puro, sem senha: qualquer um com o arquivo consegue ler.',
+    ),
+  ));
+
+  // Calendário card
+  root.appendChild(h('div', { class: 'chart-card' },
+    h('h3', null, 'Calendário'),
+    h('div', { class: 'row', style: { gap: '10px', flexWrap: 'wrap' } },
+      h('button', {
+        class: 'btn btn-sm',
+        onClick: async () => {
+          const ok = await confirm('Marca todas as aulas como não sincronizadas. O próximo prompt vai pedir CRIAR pra todas as aulas futuras, e o Claude adota os eventos que já existem em vez de duplicar.');
+          if (!ok) return;
+          await forgetCalendarSync();
+          showToast('Pronto. Vai no Início e usa o Sincronizar calendário.', { duration: 5000 });
+          rerender();
+        },
+      }, 'Reenviar tudo pro calendário'),
+    ),
+    h('p', { class: 'small muted', style: { marginTop: '12px', marginBottom: 0 } },
+      'O Sincronizar calendário copia um prompt pro clipboard. Cola numa conversa com o Claude no Mac e ele escreve no calendário Odin. Use o reenvio quando o calendário e o app saírem de sincronia.',
     ),
   ));
 

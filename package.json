@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node scripts/test-settlement.mjs && node scripts/test-state.mjs"
+    "test": "node scripts/test-settlement.mjs && node scripts/test-state.mjs && node scripts/test-calprompt.mjs"
   },
   "devDependencies": {
     "vite": "^5.4.10"

@@ -201,6 +201,8 @@ export async function updateLesson(id, patch) {
         (patch.status === 'cancelled' || l.status === 'cancelled'));
     const synced = wasEverSynced(l);
     const prevStatus = l.status;
+    const prevStartISO = l.startISO;
+    const prevName = d.students.find((x) => x.id === l.studentId)?.name || '';
     Object.assign(l, patch);
     if ('durationMinutes' in patch) l.durationMinutes = Number(patch.durationMinutes) || 60;
     if ('hourlyRate' in patch) {
@@ -221,6 +223,9 @@ export async function updateLesson(id, patch) {
       if (synced) {
         l.calSynced = true;
         l.calSeq = (l.calSeq || 0) + 1;
+        // Âncora pro MOVER: onde o evento está HOJE no calendário. ??= porque
+        // editar duas vezes antes de sincronizar tem que preservar o original.
+        l.calFrom ??= { startISO: prevStartISO, name: prevName };
       }
       l.addedToCalendar = false;
     }
@@ -234,11 +239,27 @@ export async function markCalendarAdded(ids, tombstoneIds = []) {
       if (set.has(l.id)) {
         l.addedToCalendar = true;
         l.calSynced = true;
+        delete l.calFrom;
       }
     }
     if (tombstoneIds.length && d.calendarTombstones) {
       const gone = new Set(tombstoneIds);
       d.calendarTombstones = d.calendarTombstones.filter((t) => !gone.has(t.id));
+    }
+  });
+}
+
+// Esquece que qualquer aula já foi pro calendário. O próximo prompt sai todo
+// como CRIAR, que é o verbo cuja saída é adotar o evento que já existe lá.
+// Limpar só addedToCalendar faria tudo sair como MOVER, e MOVER sem marca nas
+// notas do evento não acha nada.
+export async function forgetCalendarSync() {
+  await mutate((d) => {
+    for (const l of d.lessons) {
+      delete l.calSynced;
+      delete l.calSeq;
+      delete l.calFrom;
+      l.addedToCalendar = false;
     }
   });
 }

@@ -1,11 +1,11 @@
-import { h, icon, emptyState, copyWithFeedback, showToast } from '../components/ui.js';
+import { h, icon, emptyState, copyWithFeedback, copyToClipboard, showToast } from '../components/ui.js';
 import { openModal, confirm } from '../components/modal.js';
 import { getState, addLesson, updateLesson, deleteLesson, setLessonStatus, markCalendarAdded } from '../lib/state.js';
 import { fmtMoney, fmtTime, fmtDateRelative, fmtMonthYear, toDateTimeLocal, fromDateTimeLocal, startOfMonth, endOfMonth, dayKey, addDays } from '../lib/format.js';
 import { lessonValue } from '../lib/pricing.js';
 import { rerender } from '../lib/router.js';
 import { buildConfirmation } from '../lib/whatsapp.js';
-import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
+import { calendarOps, buildCalendarPrompt } from '../lib/calprompt.js';
 import {
   getSelectionMode,
   enterSelection,
@@ -429,14 +429,34 @@ async function editLesson(l) {
         close: false,
         onClick: async (_, close) => {
           if (!form.reportValidity()) return;
-          await updateLesson(l.id, readForm());
+          // A cópia vem ANTES de salvar: no Safari o clipboard depende da
+          // ativação do toque, e um await de persistência no meio pode gastá-la.
+          const patch = readForm();
           const { data } = getState();
-          const saved = data.lessons.find((x) => x.id === l.id);
-          const student = data.students.find((x) => x.id === saved.studentId);
-          const ics = buildICS([saved], { [saved.studentId]: student });
-          downloadICS(icsFilename('aula-' + (student?.name || 'aluno')), ics);
-          await markCalendarAdded([saved.id]);
-          showToast('Arquivo .ics baixado. Abre ele pra adicionar/atualizar o evento no Calendário.', { duration: 6000 });
+          const prev = data.lessons.find((x) => x.id === l.id) || l;
+          const draft = { ...prev, ...patch, durationMinutes: Number(patch.durationMinutes) || 60 };
+          const mudouOEvento = draft.startISO !== prev.startISO || draft.studentId !== prev.studentId;
+          if (!draft.calFrom && (prev.calSynced || prev.addedToCalendar) && mudouOEvento) {
+            draft.calFrom = {
+              startISO: prev.startISO,
+              name: data.students.find((x) => x.id === prev.studentId)?.name || '',
+            };
+          }
+          const student = data.students.find((x) => x.id === draft.studentId);
+          const ops = calendarOps([draft], [], { [draft.studentId]: student });
+          if (ops.length === 0) {
+            await updateLesson(l.id, patch);
+            showToast('Nada a sincronizar nesta aula.');
+            return close('synced');
+          }
+          const ok = await copyToClipboard(buildCalendarPrompt(ops));
+          if (!ok) {
+            showToast('Não consegui copiar. Tenta de novo.', { danger: true });
+            return;
+          }
+          await updateLesson(l.id, patch);
+          await markCalendarAdded([l.id]);
+          showToast('Prompt copiado. Cola numa conversa com o Claude no Mac pra ele escrever no calendário.', { duration: 6000 });
           close('synced');
         },
       },

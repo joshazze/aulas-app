@@ -7,7 +7,7 @@ import { lessonRow, openNewLessonDialog } from './schedule.js';
 import { backupIsStale } from './stats.js';
 import { rerender } from '../lib/router.js';
 import { buildSummary } from '../lib/whatsapp.js';
-import { buildICS, downloadICS, icsFilename } from '../lib/ics.js';
+import { calendarOps, buildCalendarPrompt } from '../lib/calprompt.js';
 import {
   getSelectionMode,
   enterSelection,
@@ -187,17 +187,21 @@ export async function renderDashboard() {
       status: 'cancelled',
       calSeq: t.calSeq,
     }));
-    const pendingCount = pendingLessons.length + pendingTombstones.length;
+    const pendingOps = calendarOps(pendingLessons, pendingTombstones, studentMap);
+    const pendingCount = pendingOps.length;
     const hasPending = pendingCount > 0;
     root.appendChild(h('button', {
       class: 'btn btn-block',
       style: { marginBottom: '18px', justifyContent: 'flex-start' },
       disabled: !hasPending,
       onClick: hasPending ? async () => {
-        const ics = buildICS([...pendingLessons, ...pendingTombstones], studentMap);
-        downloadICS(icsFilename('aulas-novas'), ics);
+        const ok = await copyToClipboard(buildCalendarPrompt(pendingOps));
+        if (!ok) {
+          showToast('Não consegui copiar. Tenta de novo.', { danger: true });
+          return;
+        }
         await markCalendarAdded(pendingLessons.map((l) => l.id), pendingTombstones.map((t) => t.id));
-        showToast('Arquivo .ics baixado. Abre ele pra adicionar os eventos no Calendário (sempre no mesmo calendário).', { duration: 6000 });
+        showToast('Prompt copiado. Cola numa conversa com o Claude no Mac pra ele escrever no calendário.', { duration: 6000 });
         rerender();
       } : null,
     }, icon('calendar'),
