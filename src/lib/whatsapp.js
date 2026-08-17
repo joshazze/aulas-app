@@ -1,4 +1,4 @@
-import { fmtCompactDateTime, fmtDuration, firstName, fmtDM } from './format.js';
+import { fmtCompactDateTime, fmtDuration, firstName, fmtDM, startOfMonth, endOfMonth } from './format.js';
 import { lessonValue } from './pricing.js';
 import { lastCycleStart, expectedSettlement, earnedByStudent } from './settlement.js';
 
@@ -13,20 +13,33 @@ function lessonLine(l, studentMap, showValues) {
   return `• ${fmtCompactDateTime(l.startISO)} — ${s?.name || 'aluno'} (${meta.join(' · ')})`;
 }
 
-export function buildSummary(data, opts = {}) {
+// Janelas possíveis do bloco "Aulas dadas". `lastMonth` é o default porque o
+// resumo costuma sair depois do mês fechado (17/08 pede julho inteiro); `cycle`
+// preserva o recorte antigo, do último dia 15 até agora.
+export const SUMMARY_PERIODS = ['lastMonth', 'thisMonth', 'cycle'];
+
+export function summaryRange(period, now = new Date()) {
+  if (period === 'thisMonth') return { from: startOfMonth(now), to: now };
+  if (period === 'cycle') return { from: lastCycleStart(now), to: now };
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return { from: startOfMonth(prevMonth), to: endOfMonth(prevMonth) };
+}
+
+export function buildSummary(data, opts = {}, now = new Date()) {
   const include = opts.include || 'both';
   const showValues = !!opts.showValues;
+  const period = SUMMARY_PERIODS.includes(opts.period) ? opts.period : 'lastMonth';
   const studentMap = Object.fromEntries(data.students.map((s) => [s.id, s]));
-  const now = new Date();
-  const cycleStart = lastCycleStart(now);
-  const cycleStartMs = cycleStart.getTime();
+  const { from, to } = summaryRange(period, now);
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
   const nowMs = now.getTime();
 
   const past = data.lessons
     .filter((l) => {
       if (l.status === 'cancelled') return false;
       const t = new Date(l.startISO).getTime();
-      return t >= cycleStartMs && t <= nowMs;
+      return t >= fromMs && t <= toMs;
     })
     .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
 
@@ -37,9 +50,9 @@ export function buildSummary(data, opts = {}) {
   const sections = [];
 
   if (include === 'past' || include === 'both') {
-    const header = `📚 *Aulas dadas* _(${fmtDM(cycleStart)} a ${fmtDM(now)})_`;
+    const header = `📚 *Aulas dadas* _(${fmtDM(from)} a ${fmtDM(to)})_`;
     if (past.length === 0) {
-      sections.push([header, `_Nenhuma aula dada desde ${fmtDM(cycleStart)}._`].join('\n'));
+      sections.push([header, `_Nenhuma aula dada de ${fmtDM(from)} a ${fmtDM(to)}._`].join('\n'));
     } else {
       const lines = [header, ...past.map((l) => lessonLine(l, studentMap, showValues))];
       if (showValues) {

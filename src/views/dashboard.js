@@ -6,7 +6,7 @@ import { lessonValue } from '../lib/pricing.js';
 import { lessonRow, openNewLessonDialog } from './schedule.js';
 import { backupIsStale } from './stats.js';
 import { rerender } from '../lib/router.js';
-import { buildSummary } from '../lib/whatsapp.js';
+import { buildSummary, SUMMARY_PERIODS } from '../lib/whatsapp.js';
 import { calendarOps, buildCalendarPrompt } from '../lib/calprompt.js';
 import {
   getSelectionMode,
@@ -25,11 +25,12 @@ function loadSummaryPrefs() {
     if (raw && typeof raw === 'object') {
       return {
         include: ['past', 'future', 'both'].includes(raw.include) ? raw.include : 'both',
+        period: SUMMARY_PERIODS.includes(raw.period) ? raw.period : 'lastMonth',
         showValues: !!raw.showValues,
       };
     }
   } catch {}
-  return { include: 'both', showValues: false };
+  return { include: 'both', period: 'lastMonth', showValues: false };
 }
 
 function saveSummaryPrefs(prefs) {
@@ -39,6 +40,7 @@ function saveSummaryPrefs(prefs) {
 async function openSummaryDialog(data) {
   const prefs = loadSummaryPrefs();
   let include = prefs.include;
+  let period = prefs.period;
   let showValues = prefs.showValues;
 
   const pillRow = (options, current, onPick) => {
@@ -69,6 +71,14 @@ async function openSummaryDialog(data) {
       ),
     ),
     h('div', { class: 'field' },
+      h('label', null, 'Período (dadas)'),
+      pillRow(
+        [{ value: 'lastMonth', label: 'Mês passado' }, { value: 'thisMonth', label: 'Este mês' }, { value: 'cycle', label: 'Ciclo 15→hoje' }],
+        period,
+        (v) => { period = v; },
+      ),
+    ),
+    h('div', { class: 'field' },
       h('label', null, 'Valores'),
       pillRow(
         [{ value: 'hide', label: 'Ocultar' }, { value: 'show', label: 'Mostrar' }],
@@ -84,7 +94,7 @@ async function openSummaryDialog(data) {
     actions: [
       { label: 'Cancelar', variant: 'btn-ghost', value: null },
       { label: 'Copiar', variant: 'btn-primary', onClick: async (_, close) => {
-        const finalPrefs = { include, showValues };
+        const finalPrefs = { include, period, showValues };
         saveSummaryPrefs(finalPrefs);
         const text = buildSummary(data, finalPrefs);
         const ok = await copyToClipboard(text);
